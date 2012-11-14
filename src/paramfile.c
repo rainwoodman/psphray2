@@ -24,8 +24,10 @@ static int _ ## name (char * group, char * key, type * value, type def) { \
     value[0] = g_key_file_get_ ## name(keyfile, group, key, &error); \
     return TRUE; \
 }
-
-SCHEMA(double, double, nan()) ;
+#define BADFLOAT g_strtod("NAN(BAD)",NULL)
+#define BADINT 0xdeadbeef
+SCHEMA(double, double, BADFLOAT);
+SCHEMA(integer, int, BADINT);
 SCHEMA(string, char *, NULL) ;
 
 void paramfile_read(char * filename) {
@@ -61,9 +63,19 @@ void paramfile_read(char * filename) {
     CB.U.PROTONMASS = CB.U.GRAM * 1.6726e-24;
 
     _string("IO", "datadir", &CB.datadir, NULL);
+    _string("IO", "inputbase", &CB.inputbase, NULL);
+    _string("IO", "snapbase", &CB.snapbase, NULL);
+    _integer("IO", "SnapNumMajorBegin", &CB.SnapNumMajorBegin, BADINT);
+    _integer("IO", "SnapNumMajorEnd", &CB.SnapNumMajorEnd, BADINT);
+    _integer("IO", "NumReader", &CB.NReader, BADINT);
+    _integer("IO", "IDByteSize", &CB.IDByteSize, 8);
 
+    if(CB.NReader > NTask) {
+        g_warning("too many readers requested, using %d", NTask);
+        CB.NReader = NTask;
+    }
     char * data = g_key_file_to_data(keyfile, NULL, NULL);
-    char * usedfilename = g_strdup_printf("%s/%s-used", CB.datadir, filename);
+    char * usedfilename = g_strdup_printf("%s/paramfile-used", CB.datadir);
     if(!g_file_set_contents(usedfilename, data, -1, &error)) {
         g_critical("failed to save used params to %s:%s", usedfilename, error->message);
         g_error_free(error);

@@ -1,10 +1,17 @@
 typedef struct {
-    int ThisTask;
-    int NTask;
     double Time;
     double a;
 
+    int SnapNumMajor;
+    int SnapNumMajorBegin;
+    int SnapNumMajorEnd;
+    int SnapNumMinor;
+    int IDByteSize;
+    int NReader;
+    /* do not forget to add the bcast call to common_block_sync() */
     char * datadir;
+    char * inputbase;
+    char * snapbase;
 
     struct {
         int VERBOSE;
@@ -37,11 +44,14 @@ typedef struct {
 extern CommonBlock CB;
 extern int ThisTask;
 extern int NTask;
-
 void common_block_sync();
+void common_block_bootstrap();
 
-#define ROOTONLY if(CB.ThisTask == 0)
+#define ROOTONLY if(ThisTask == 0)
 
 #define barrier() MPI_Barrier(MPI_COMM_WORLD)
 #define abort(x) MPI_Abort(MPI_COMM_WORLD, (x))
 
+#include "par.h"
+#include "paramfile.h"
+#include "snapshot.h"

@@ -37,9 +37,17 @@ int main(int argc, char * argv[]) {
     common_block_sync();
     barrier();
 
-    g_message("MPI Task: %d of %d, datadir=%s", CB.ThisTask, CB.NTask, CB.datadir);
+    g_message("MPI Task: %d of %d, datadir=%s", ThisTask, NTask, CB.datadir);
     barrier();
 
+    for(CB.SnapNumMajor = CB.SnapNumMajorBegin;
+        CB.SnapNumMajor < CB.SnapNumMajorEnd;
+        CB.SnapNumMajor ++) {
+        snapshot_prepare();
+        snapshot_read();
+        g_print("local Par(%d): ID = %ld - %ld\n", NPAR, PAR(0).id, PAR(-1).id);
+    }
+    barrier();
     MPI_Finalize();
     return 0;
 }
