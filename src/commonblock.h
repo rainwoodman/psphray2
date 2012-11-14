@@ -1,6 +1,7 @@
 typedef struct {
     double Time;
     double a;
+    double BoxSize;
 
     int SnapNumMajor;
     int SnapNumMajorBegin;
@@ -8,6 +9,7 @@ typedef struct {
     int SnapNumMinor;
     int IDByteSize;
     int NReader;
+
     /* do not forget to add the bcast call to common_block_sync() */
     char * datadir;
     char * inputbase;
@@ -52,6 +54,7 @@ void common_block_bootstrap();
 #define barrier() MPI_Barrier(MPI_COMM_WORLD)
 #define abort(x) MPI_Abort(MPI_COMM_WORLD, (x))
 
+#include "fckey.h"
 #include "par.h"
 #include "paramfile.h"
 #include "snapshot.h"

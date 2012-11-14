@@ -17,3 +17,4 @@ void par_preallocate(size_t size) {
 void par_increase_size(size_t addsize) {
     g_array_set_size(_PAR, _PAR->len + addsize);
 }
+

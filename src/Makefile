@@ -6,6 +6,7 @@ CC = mpiicc -g
 SOURCES = \
     main.c \
     commonblock.c \
+    fckey.c \
     par.c \
     paramfile.c \
     snapshot.c

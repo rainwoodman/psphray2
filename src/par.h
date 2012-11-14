@@ -1,22 +1,13 @@
-typedef struct { 
-    union {
-        uint64_t x;
-        uint64_t y;
-        uint64_t z;
-    };
-    uint64_t a[3];
-} fckey_t;
 
 typedef uint64_t long_t;
+
 typedef double float_t;
+
 typedef float_t istate_t[3];
 typedef float_t dstate_t[3];
 
 typedef struct {
-    union {
-        fckey_t fckey; /* position */
-        float_t pos[3];
-    };
+    fckey_t fckey; /* position */
     long_t id; /* for debugging */
     float_t mass; 
     float_t T;

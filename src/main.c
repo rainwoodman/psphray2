@@ -45,7 +45,10 @@ int main(int argc, char * argv[]) {
         CB.SnapNumMajor ++) {
         snapshot_prepare();
         snapshot_read();
-        g_print("local Par(%d): ID = %ld - %ld\n", NPAR, PAR(0).id, PAR(-1).id);
+        g_print("local Par(%d): ID = %ld - %ld, "
+          "KEY = " FCKEY_FMT " - " FCKEY_FMT "\n", 
+          NPAR, PAR(0).id, PAR(-1).id,
+          FCKEY_PRINT(PAR(0).fckey), FCKEY_PRINT(PAR(-1).fckey));
     }
     barrier();
     MPI_Finalize();
