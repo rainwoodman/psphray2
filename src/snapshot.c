@@ -38,7 +38,9 @@ static int NReader;
 static int get_fmt_field_count(char * fmt) {
     GError * error = NULL;
     GRegex * regex = g_regex_new("%[^d]*d", (GRegexCompileFlags)0, (GRegexMatchFlags)0, &error);
-    if(!regex) g_error("checkhere");
+    if(!regex) {
+        g_error("regex is wrong: %s\n", error->message);
+    }
     GMatchInfo * matchinfo = NULL;
     g_regex_match(regex, CB.inputbase, (GRegexMatchFlags) 0, &matchinfo);
     int count = 1;
@@ -57,8 +59,7 @@ static char * format_input_filename(int major, int fid) {
         case 3:
             return g_strdup_printf(CB.inputbase, major, major, fid);
         default:
-            g_print("format of inputbase is wrong, need 3, 2 or 1 %%d");
-            abort(1);
+            g_error("format of inputbase is wrong, need 3, 2 or 1 %%d");
             return NULL;
     }
 }
@@ -68,8 +69,7 @@ static void snapshot_read_header(int fid, SnapHeader * h) {
     GError * error = NULL;
     GMappedFile * file = g_mapped_file_new(filename, FALSE, &error);
     if(!file) {
-        g_print("cannot open %s:%s", filename, error->message);
-        abort(1);
+        g_error("cannot open %s:%s", filename, error->message);
     }
     g_free(filename);
     char * buffer = g_mapped_file_get_contents(file);
@@ -89,7 +89,8 @@ static void snapshot_read_header(int fid, SnapHeader * h) {
     g_mapped_file_unref(file);
 }
 
-void snapshot_prepare() {
+static size_t snapshot_prepare() {
+    /* returns number of pars will be read into this task */
     SnapHeader h;
     ROOTONLY {
         snapshot_read_header(0, &h);
@@ -117,6 +118,24 @@ void snapshot_prepare() {
     ReaderRank = ThisTask / NReader;
     MPI_Comm_size(ReaderComm, &ReaderSize);
     MPI_Barrier(MPI_COMM_WORLD);
+
+    int64_t Ngas = 0;
+    LEADERONLY {
+        int fid;
+        for(fid = ReaderColor * Nfile / NReader;
+            fid < (ReaderColor + 1) * Nfile / NReader;
+            fid ++) {
+            SnapHeader h;
+            snapshot_read_header(fid, &h);
+            Ngas += h.Ngas;
+            g_debug("fid %d has Ngas %ld", fid, Ngas);
+        }
+    }
+    MPI_Bcast(&Ngas, sizeof(Ngas), MPI_BYTE, 0, ReaderComm);
+    int64_t start = ReaderRank * Ngas / ReaderSize;
+    int64_t end = (ReaderRank + 1) * Ngas / ReaderSize;
+
+    return end - start;
 }
 
 static int snapshot_scatter_block(char * data, size_t N, par_t * recvbuf, 
@@ -241,20 +260,23 @@ static void snapshot_read_one(int fid, SnapHeader * h) {
         GError * error = NULL;
         file = g_mapped_file_new(filename, FALSE, &error);
         if(!file) {
-            g_print("failed to read file %s:%s", filename, error->message);
-            abort(1);
+            g_error("failed to read file %s:%s", filename, error->message);
         }
         buffer = g_mapped_file_get_contents(file);
         g_free(filename);
         cast = g_malloc(MAX(sizeof(float_t) * 3, sizeof(long_t)) * h[0].Ngas);
     }
 
+    size_t END = NPARin;
+
+    NPARin += snapshot_scatter_block(NULL, h[0].Ngas, NULL, 0, 0);
+
     /* now buffer is the file on LEADER */
     p = buffer + 256 + 4 + 4; /* skip header */
 
     /*pos*/
     convert_to_fckey_t(p + 4, cast, h[0].Ngas, snap_float_elsize);
-    snapshot_scatter_block(cast, h[0].Ngas, & PAREND, 
+    snapshot_scatter_block(cast, h[0].Ngas, & PARin(END), 
         offsetof(par_t, fckey), elsizeof(par_t, fckey));
     p += snap_float_elsize * 3 * Ntot + 4 + 4;
     MPI_Barrier(ReaderComm);
@@ -263,7 +285,7 @@ static void snapshot_read_one(int fid, SnapHeader * h) {
 
     /* id */
     cast_to_long_t(p + 4, cast, h[0].Ngas, CB.IDByteSize);
-    snapshot_scatter_block(cast, h[0].Ngas, & PAREND, 
+    snapshot_scatter_block(cast, h[0].Ngas, & PARin(END), 
           offsetof(par_t, id), elsizeof(par_t, id));
     p += CB.IDByteSize * Ntot + 4 + 4;
 
@@ -275,7 +297,7 @@ static void snapshot_read_one(int fid, SnapHeader * h) {
         for(int i = 0; i < h[0].Ngas; i++) {
             ((float_t *) cast)[i] = h[0].masstab[0];
         }
-    snapshot_scatter_block(cast, h[0].Ngas, & PAREND, 
+    snapshot_scatter_block(cast, h[0].Ngas, & PARin(END), 
         offsetof(par_t, mass), elsizeof(par_t, mass));
     p += 4 + 4;
     /* mass tab handling */
@@ -285,13 +307,9 @@ static void snapshot_read_one(int fid, SnapHeader * h) {
 
     /* ie */
     cast_to_float_t(p + 4, cast, h[0].Ngas, snap_float_elsize);
-    snapshot_scatter_block(cast, h[0].Ngas, & PAREND, 
+    snapshot_scatter_block(cast, h[0].Ngas, & PARin(END), 
         offsetof(par_t, T), elsizeof(par_t, T));
     p += snap_float_elsize * h[0].Ngas + 4 + 4;
-
-    par_increase_size(
-        snapshot_scatter_block(NULL, h[0].Ngas, NULL, 0, 0)
-    );
 
     LEADERONLY {
         g_free(cast);
@@ -300,30 +318,16 @@ static void snapshot_read_one(int fid, SnapHeader * h) {
 }
 
 void snapshot_read() {
+    size_t Ngas = snapshot_prepare();
+    par_allocate_input(Ngas);
     int fid;
-    int64_t Ngas = 0;
-    LEADERONLY {
-        for(fid = ReaderColor * Nfile / NReader;
-            fid < (ReaderColor + 1) * Nfile / NReader;
-            fid ++) {
-            SnapHeader h;
-            snapshot_read_header(fid, &h);
-            Ngas += h.Ngas;
-            g_message("ifd %d Ngas %ld", fid, Ngas);
-        }
-    }
-    MPI_Bcast(&Ngas, sizeof(Ngas), MPI_BYTE, 0, ReaderComm);
-    int64_t start = ReaderRank * Ngas / ReaderSize;
-    int64_t end = (ReaderRank + 1) * Ngas / ReaderSize;
-
-    par_preallocate(end - start);
-
     for(fid = ReaderColor * Nfile / NReader;
         fid < (ReaderColor + 1) * Nfile / NReader;
         fid ++) {
         SnapHeader h;
         snapshot_read_one(fid, &h);
     }
+    par_sort_by_fckey(PAR_BUFFER_IN);
 }
 
 

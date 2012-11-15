@@ -71,15 +71,50 @@ void fckey_clear(fckey_t * key, int bits) {
     }
 }
 
+static int uint64_compare(uint64_t * p1, uint64_t * p2) {
+    return (*p1 > *p2) - (*p2 > *p1);
+}
+static uint64_t uint64_center(uint64_t p1, uint64_t p2) {
+    return (p1 >> 1) + (p2 >> 1) + ((p1 & 1) && (p2 & 1));
+}
+void fckey_center(fckey_t * center, fckey_t * key1, fckey_t * key2) {
+    /* this is quite rough if the high bit is */
+    if(key1->a[1] == key2->a[1]) {
+        center->a[1] = key1->a[1];
+        center->a[0] = uint64_center(key1->a[0], key2->a[0]);
+    } else {
+        center->a[1] = uint64_center(key1->a[1], key2->a[1]);
+        center->a[0] = uint64_center(key1->a[0], key2->a[0]);
+        if((key1->a[1] & 1) != (key2->a[1] & 1)) {
+            center->a[0] += (1uL<<63) - 1;
+        }
+    }
+}
+int fckey_cmp(fckey_t * key1, fckey_t * key2) {
+    int r1 = uint64_compare(&key1->a[1], &key2->a[1]);
+    if(r1 == 0) {
+        return uint64_compare(&key1->a[0], &key2->a[0]);
+    } else {
+        return r1;
+    }
+}
 void fckey_to_ipos(fckey_t * key, int64_t pos[3]) {
-    for(int d=0; d < 3; d++) 
+    int d;
+    for(d=0; d < 3; d++) 
         fckey_extract(key, &pos[d], d);
 }
 void fckey_from_ipos(fckey_t * key, int64_t pos[3]) {
-    for(int d=0; d < 3; d++)
+    int d;
+    key->a[0] = 0;
+    key->a[1] = 0;
+    for(d=0; d < 3; d++)
         fckey_fill(key, pos[d], d);
 }
 
+void fckey_set_max(fckey_t * key) {
+    static int64_t pos[3] = {FCKEY_MAX, FCKEY_MAX, FCKEY_MAX};
+    fckey_from_ipos(key, pos);
+}
 #if 0
 #define FMT8 "%0.16lX "
 #define FMT16 FMT8 FMT8
@@ -90,10 +125,18 @@ void test(int bits) {
     fckey_extract(&key, &x, bits);
     printf( "%d " FMT16 " %0.16lX \n", bits, key.a[1], key.a[0], x);
 }
+void test2(int bits) {
+    fckey_t key1 = {0, 0}, key2 = {0, 0}, center;
+    fckey_or_with_leftshift(&key1, 0xdeadbeefdeadbeef, bits);
+    fckey_or_with_leftshift(&key2, 0xdeadbeefdeadbeef - 1, bits);
+    fckey_center(&center, &key1, &key2);
+    printf( "%d " FMT16  FMT16 "\n", bits, 
+            key1.a[1], key1.a[0], center.a[1], center.a[0]);
+}
 void main() {
     int i = 0;
-    for(i = 0; i < 3; i++) {
-        test(i);
+    for(i = 0; i < 128; i++) {
+        test2(i);
     }
 }
 #endif

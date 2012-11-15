@@ -10,5 +10,4 @@ typedef struct {
     double masstab[6];
 } SnapHeader;
 
-void snapshot_read_header(int fid, SnapHeader * h);
-
+void snapshot_read();

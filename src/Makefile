@@ -1,7 +1,7 @@
 GLIBPREFIX=../GLIB-STATIC
 CFLAGS = -I$(GLIBPREFIX)/include/glib-2.0 -I$(GLIBPREFIX)/lib/glib-2.0/include
 LDFLAGS = -L$(GLIBPREFIX)/lib
-CC = mpiicc -g
+CC = mpiicc
 
 SOURCES = \
     main.c \
@@ -9,7 +9,8 @@ SOURCES = \
     fckey.c \
     par.c \
     paramfile.c \
-    snapshot.c
+    snapshot.c \
+	domain.c
 
 HEADERS =
 OBJECTS = $(SOURCES:.c=.o)

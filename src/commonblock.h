@@ -1,7 +1,8 @@
 typedef struct {
     double Time;
     double a;
-    double BoxSize;
+
+    double BoxSize; /* filled by snapshot.c, not by paramfile.c, yet */
 
     int SnapNumMajor;
     int SnapNumMajorBegin;
@@ -9,6 +10,8 @@ typedef struct {
     int SnapNumMinor;
     int IDByteSize;
     int NReader;
+
+    double MemImbalanceTol;
 
     /* do not forget to add the bcast call to common_block_sync() */
     char * datadir;
@@ -51,10 +54,8 @@ void common_block_bootstrap();
 
 #define ROOTONLY if(ThisTask == 0)
 
-#define barrier() MPI_Barrier(MPI_COMM_WORLD)
-#define abort(x) MPI_Abort(MPI_COMM_WORLD, (x))
-
 #include "fckey.h"
 #include "par.h"
 #include "paramfile.h"
 #include "snapshot.h"
+
