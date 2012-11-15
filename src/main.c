@@ -58,14 +58,20 @@ int main(int argc, char * argv[]) {
         CB.SnapNumMajor < CB.SnapNumMajorEnd;
         CB.SnapNumMajor ++) {
         snapshot_read();
-        #if 0
-        g_print("local Par(%d): ID = %ld - %ld, "
-          "KEY = " FCKEY_FMT " - " FCKEY_FMT "\n", 
-          NPAR, PAR(0).id, PAR(-1).id,
-          FCKEY_PRINT(PAR(0).fckey), FCKEY_PRINT(PAR(-1).fckey));
-        #endif
+        par_sort_by_fckey(PAR_BUFFER_IN);
         domain_decompose();
+        par_sort_by_fckey(PAR_BUFFER_MAIN);
         par_free_input();
+        #if 0
+        for(int i = 0; i < NTask; i++) {
+            if(ThisTask == i)
+            g_print("local Par(%ld): ID = %ld - %ld, "
+              "KEY = " FCKEY_FMT " - " FCKEY_FMT "\n", 
+              NPAR, PAR(0).id, PAR(-1).id,
+              FCKEY_PRINT(PAR(0).fckey), FCKEY_PRINT(PAR(-1).fckey));
+            MPI_Barrier(MPI_COMM_WORLD);
+        }
+        #endif
     }
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_Finalize();

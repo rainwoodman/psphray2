@@ -1,7 +1,7 @@
 GLIBPREFIX=../GLIB-STATIC
 CFLAGS = -I$(GLIBPREFIX)/include/glib-2.0 -I$(GLIBPREFIX)/lib/glib-2.0/include
 LDFLAGS = -L$(GLIBPREFIX)/lib
-CC = mpiicc
+CC = mpiicc -g
 
 SOURCES = \
     main.c \

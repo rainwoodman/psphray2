@@ -112,8 +112,8 @@ void domain_decompose() {
 
     MPI_Allreduce(N, segN, NTask, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
 
+    par_allocate(segN[ThisTask], 0);
     NPAR = segN[ThisTask];
-    par_allocate(NPAR, 0);
 
     ROOTONLY {
         intptr_t segNmax=segN[0], segNmin=segN[0];

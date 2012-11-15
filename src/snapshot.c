@@ -319,6 +319,7 @@ static void snapshot_read_one(int fid, SnapHeader * h) {
 
 void snapshot_read() {
     size_t Ngas = snapshot_prepare();
+    NPARin = 0;
     par_allocate_input(Ngas);
     int fid;
     for(fid = ReaderColor * Nfile / NReader;
@@ -327,7 +328,6 @@ void snapshot_read() {
         SnapHeader h;
         snapshot_read_one(fid, &h);
     }
-    par_sort_by_fckey(PAR_BUFFER_IN);
 }
 
 

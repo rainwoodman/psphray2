@@ -27,7 +27,6 @@ void par_allocate(size_t size, size_t before) {
     _PARbase = g_malloc((size + before)* sizeof(par_t));
     _PAR_size = size;
     _PAR = _PARbase + before;
-    NPAR = 0;
 }
 
     static int _par_compare_fckey(par_t * par1, par_t * par2) {

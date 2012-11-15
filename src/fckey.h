@@ -6,7 +6,7 @@ typedef union {
 #define FCKEY_BITS 16
 #define FCKEY_MAX ((1L << FCKEY_BITS) - 1)
 
-#define FCKEY_FMT "%0.16lX %0.16lX"
+#define FCKEY_FMT "%lX%0.16lX"
 #define FCKEY_PRINT(x) x.a[1], x.a[0]
 
 int fckey_cmp(fckey_t * key1, fckey_t * key2);
