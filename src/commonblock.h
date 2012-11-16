@@ -56,9 +56,14 @@ void common_block_sync();
 void common_block_bootstrap();
 
 #define ROOTONLY if(ThisTask == 0)
+#define TAKETURNS \
+    for(int __i__ = 0; __i__ < NTask; \
+        MPI_Barrier(MPI_COMM_WORLD), __i__++) if(ThisTask == __i__)
+
 
 #include "fckey.h"
 #include "par.h"
 #include "paramfile.h"
 #include "snapshot.h"
 #include "tree.h"
+

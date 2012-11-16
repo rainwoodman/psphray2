@@ -20,8 +20,10 @@ static void log_handler
     GLogLevelFlags log_level,
     const gchar *message,
     gpointer unused_data) {
+
     g_log_default_handler(log_domain, log_level, message, unused_data);
-    if(log_level & G_LOG_FLAG_FATAL & NTask > 1) {
+    if((log_level & G_LOG_FLAG_FATAL) && NTask > 1) {
+        g_on_error_stack_trace ("");
         abort();
     }
 }
@@ -65,32 +67,47 @@ int main(int argc, char * argv[]) {
         par_sort_by_fckey(PAR_BUFFER_MAIN);
         par_free_input();
         tree_build();
-        domain_adjust();
-        #if 0
-        for(int i = 0; i < NTask; i++) {
-            if(ThisTask == i) {
-                g_print("local Par(%ld): ID = %ld - %ld, "
-                  "KEY = " FCKEY_FMT " - " FCKEY_FMT "\n", 
-                  NPAR, PAR(0).id, PAR(-1).id,
-                  FCKEY_PRINT(PAR(0).fckey), FCKEY_PRINT(PAR(-1).fckey));
-                TreeIter * iter = tree_iter_new(TREEROOT);
-                Node * node = tree_iter_next_child(iter);
-                while(node) {
-                    if(node->type == NODE_TYPE_LEAF)
-                    g_print("node: " NODE_FMT "\n", 
-                        NODE_PRINT(node[0]));
-                    node = tree_iter_next_child(iter);
-                }
 
-                tree_iter_free(iter);
-            }
-            MPI_Barrier(MPI_COMM_WORLD);
-        }
-        #endif
+        inspect_par();
+        domain_adjust();
+        inspect_par();
+
+        tree_free();
+        tree_build();
+        domain_adjust();
     }
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_Finalize();
     return 0;
 }
 
+static void inspect_par() {
+    for(intptr_t i = 0; i < NPAR - 1; i++) {
+        if(fckey_cmp(&PAR(i).fckey, &PAR(i + 1).fckey) > 0) {
+            g_warning("%02d par unordered %ld and %ld " 
+             FCKEY_FMT ", " FCKEY_FMT, 
+             ThisTask, i, i+1,
+            FCKEY_PRINT(PAR(i).fckey), FCKEY_PRINT(PAR(i+1).fckey));
+        }
+    }
+    TAKETURNS {
+            g_print("%02d local Par(%ld): ID = %ld - %ld, "
+              "KEY = " FCKEY_FMT " - " FCKEY_FMT "\n", 
+              ThisTask, 
+              NPAR, PAR(0).id, PAR(-1).id,
+              FCKEY_PRINT(PAR(0).fckey), FCKEY_PRINT(PAR(-1).fckey));
+//        inspect_tree();
+    }
+}
+void inspect_tree() {
+    TreeIter * iter = tree_iter_new(TREEROOT);
+    Node * node = tree_iter_next(iter);
+    while(node) {
+        if(node->type == NODE_TYPE_LEAF)
+        g_print("node: " NODE_FMT "\n", 
+            NODE_PRINT(node[0]));
+        node = tree_iter_next(iter);
+    }
 
+    tree_iter_free(iter);
+}

@@ -22,8 +22,8 @@ extern size_t _PAR_size;
 extern par_t * _PARin;
 extern size_t NPARin;
 #define PARin(i) (_PARin[((signed)(i)<0)?((i)+NPARin):(i)])
-size_t par_grow(size_t add);
-void par_shift(size_t add);
+intptr_t par_append(intptr_t add);
+void par_prepend(intptr_t add);
 void par_allocate(size_t size, size_t before);
 void par_allocate_input(size_t size);
 void par_free_input();

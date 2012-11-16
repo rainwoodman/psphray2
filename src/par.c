@@ -52,25 +52,27 @@ intptr_t par_search_by_fckey(fckey_t * key, int which) {
     } else {
         return searchsorted(key, _PAR, NPAR, sizeof(par_t), 
         (GCompareFunc) _par_compare_fckey2);
-
     }
 }
 
-size_t par_grow(size_t addsize) {
+intptr_t par_append(intptr_t addsize) {
     if(NPAR + addsize <= _PAR_size) {
         NPAR += addsize;
     } else {
-        g_error("not enough space in PARbase\n");
+        g_error("not enough space on rear needed %ld has %ld\n",
+             addsize, _PAR_size - NPAR);
     }
     return NPAR - addsize;
 }
 
-void par_shift(size_t addsize) {
+void par_prepend(intptr_t addsize) {
     if(addsize <= _PAR - _PARbase) {
         _PAR -= addsize;
         _PAR_size += addsize;
+        NPAR += addsize;
     } else {
-        g_error("not enough space in PARbase\n");
+        g_error("not enough space on front need %ld has %ld\n",
+          addsize, _PAR - _PARbase);
     }
 }
 
@@ -111,5 +113,5 @@ static intptr_t searchsorted (void * target, void * array,
         }
     }
 
-    return middle;
+    return left;
 }

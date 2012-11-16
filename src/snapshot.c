@@ -240,10 +240,8 @@ static void convert_to_fckey_t(char * in, char * out, size_t N, int elsize) {
 
 static void snapshot_read_one(int fid, SnapHeader * h) {
     LEADERONLY {
-        g_message("2nd  time read header");
         snapshot_read_header(fid, h);
     }
-
     MPI_Bcast(h, sizeof(SnapHeader), MPI_BYTE, 0, MPI_COMM_WORLD);
 
     size_t Ntot = 0;
@@ -277,6 +275,9 @@ static void snapshot_read_one(int fid, SnapHeader * h) {
 
     NPARin += snapshot_scatter_block(NULL, h[0].Ngas, NULL, 0, 0);
 
+    TAKETURNS {
+        g_message("%02d NPARin = %ld ", ThisTask, NPARin);
+    }
     /* now buffer is the file on LEADER */
     p = buffer + 256 + 4 + 4; /* skip header */
 
@@ -320,19 +321,21 @@ static void snapshot_read_one(int fid, SnapHeader * h) {
     LEADERONLY {
         g_free(cast);
         g_mapped_file_unref(file);
+        g_message("finished with file %d", fid);
     }
 }
 
 void snapshot_read() {
     size_t Ngas = snapshot_prepare();
     NPARin = 0;
-    par_allocate_input(Ngas);
+    par_allocate_input(Ngas * 1.1);
     int fid;
     for(fid = ReaderColor * Nfile / NReader;
         fid < (ReaderColor + 1) * Nfile / NReader;
         fid ++) {
         SnapHeader h;
         snapshot_read_one(fid, &h);
+        MPI_Barrier(MPI_COMM_WORLD);
     }
 }
 

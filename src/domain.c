@@ -175,49 +175,125 @@ void domain_decompose() {
 }
 
 void domain_adjust() {
+    /* The algorithm:
+     *
+     * Consider two adjacent trees, and their nearby edge nodes A B.
+     * Two cases:
+     *  a) A B are disjoint:
+     *      no need to do anything.
+     *  b) A B are joint (identical or children):
+     *      assume B is lower than A.
+     *      on B's task find the image of A.
+     *      compare len(A') and len(A). migrate
+     *      the shorter one.
+     *  */
+    int PrevTask = (ThisTask - 1 + NTask) % NTask,
+        NextTask = (ThisTask + 1) % NTask;
+
     Node * first = tree_locate_fckey(TREEROOT, &PAR(0).fckey);
     Node * last = tree_locate_fckey(TREEROOT, &PAR(-1).fckey);
-    Node before;
-    Node behind;
+    Node * before = g_slice_new(Node);
+    Node * behind = g_slice_new(Node);
 
     MPI_Barrier(MPI_COMM_WORLD);
-    MPI_Sendrecv(first, sizeof(Node), MPI_BYTE, (ThisTask - 1 + NTask) % NTask, 1,
-        &behind, sizeof(Node), MPI_BYTE, (ThisTask + 1) % NTask, 1,
+    MPI_Sendrecv(first, sizeof(Node), MPI_BYTE, PrevTask, 1,
+        behind, sizeof(Node), MPI_BYTE, NextTask, 1,
         MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     MPI_Barrier(MPI_COMM_WORLD);
 
-    MPI_Sendrecv(last, sizeof(Node), MPI_BYTE, (ThisTask + 1) % NTask, 2,
-        &before, sizeof(Node), MPI_BYTE, (ThisTask - 1 + NTask) % NTask, 2,
+    MPI_Sendrecv(last, sizeof(Node), MPI_BYTE, NextTask, 2,
+        before, sizeof(Node), MPI_BYTE, PrevTask, 2,
         MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-    intptr_t in_before = 0;
-    intptr_t in_behind = 0;
-    intptr_t from_before = 0;
-    intptr_t from_behind = 0;
-
-    for(intptr_t i = 0; i < NPAR; i++) {
-        if(!tree_node_contains_fckey(&before, &PAR(i).fckey))
-            break;
-        in_before ++;
+    if(tree_node_contains_node(behind, last)) {
+        last = tree_node_find_image(last, behind);
     }
-    for(intptr_t i = NPAR - 1; i >= 0; i--) {
-        if(!tree_node_contains_fckey(&behind, &PAR(i).fckey))
-            break;
-        in_behind ++;
+    if(tree_node_contains_node(before, first)) {
+        first = tree_node_find_image(first, before);
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
-    MPI_Sendrecv(&in_before, 1, MPI_LONG, (ThisTask - 1 + NTask) % NTask, 1,
-        &from_behind, 1, MPI_LONG, (ThisTask + 1) % NTask, 1,
+    MPI_Sendrecv(first, sizeof(Node), MPI_BYTE, PrevTask, 3,
+        behind, sizeof(Node), MPI_BYTE, NextTask, 3,
         MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     MPI_Barrier(MPI_COMM_WORLD);
 
-    MPI_Sendrecv(&in_behind, 1, MPI_LONG, (ThisTask + 1) % NTask, 2,
-        &from_before, 1, MPI_LONG, (ThisTask - 1 + NTask) % NTask, 2,
+    MPI_Sendrecv(last, sizeof(Node), MPI_BYTE, NextTask, 4,
+        before, sizeof(Node), MPI_BYTE, PrevTask, 4,
         MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    
-    g_print("in_before %ld from_before %ld " NODE_FMT "\n", 
-            in_before, from_before, NODE_PRINT(before));
-    g_print("in_behind %ld from_behind %ld " NODE_FMT "\n", 
-            in_behind, from_behind, NODE_PRINT(behind));
+
+    MPI_Datatype partype;
+    MPI_Type_contiguous(sizeof(par_t), MPI_BYTE, &partype);
+    MPI_Type_commit(&partype);
+    MPI_Request head_req;
+    MPI_Request tail_req;
+    int head_sendcount = 0;
+    int head_recvcount = 0;
+    int tail_sendcount = 0;
+    int tail_recvcount = 0;
+
+    int do_tail = tree_node_contains_node(last, behind) || 
+                tree_node_contains_node(behind, last);
+    int do_head = tree_node_contains_node(first, before) || 
+                tree_node_contains_node(before, first);
+
+    if(do_tail) {
+        if(last->npar < behind->npar) {
+            /* send */
+            tail_sendcount = last->npar;
+            par_t * sendbuf = &PAR(-tail_sendcount);
+            par_append(-tail_sendcount);
+            MPI_Isend(sendbuf, tail_sendcount, partype,
+                NextTask, 6,
+                MPI_COMM_WORLD, &tail_req);
+        } else {
+            /* recv */ 
+            tail_recvcount = behind->npar;
+            par_t * recvbuf = &PAR(NPAR);
+            par_append(tail_recvcount);
+            MPI_Irecv(recvbuf, tail_recvcount, partype, 
+                NextTask, 7, 
+                MPI_COMM_WORLD, &tail_req);
+        }
+    }
+    if(do_head) {
+        if(first->npar > before->npar) {
+            /* recv */
+            head_recvcount = before->npar;
+            par_prepend(head_recvcount);
+            par_t * recvbuf = &PAR(0);
+            MPI_Irecv(recvbuf, head_recvcount, partype, 
+                PrevTask, 6,
+                MPI_COMM_WORLD, &head_req);
+        } else {
+            /* send */
+            head_sendcount = first->npar;
+            par_t * sendbuf = &PAR(0);
+            par_prepend(-head_sendcount);
+            MPI_Isend(sendbuf, head_sendcount, partype, 
+                PrevTask, 7,
+                MPI_COMM_WORLD, &head_req);
+        }
+    }
+    TAKETURNS {
+        g_print("%02d -> %02d (%05d) "
+                "%02d <- %02d (%05d) "
+                "%02d -> %02d (%05d) "
+                "%02d <- %02d (%05d) "
+                 "\n", 
+          ThisTask, PrevTask, head_sendcount,
+          ThisTask, PrevTask, head_recvcount,
+          ThisTask, NextTask, tail_sendcount,
+          ThisTask, NextTask, tail_recvcount
+          );
+    }
+    if(do_head) MPI_Wait(&head_req, MPI_STATUS_IGNORE);
+    if(do_tail) MPI_Wait(&tail_req, MPI_STATUS_IGNORE);
+
+
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    MPI_Type_free(&partype);
+    g_slice_free(Node, before);
+    g_slice_free(Node, behind);
 }
