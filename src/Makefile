@@ -10,7 +10,8 @@ SOURCES = \
     par.c \
     paramfile.c \
     snapshot.c \
-	domain.c
+	domain.c \
+	tree.c
 
 HEADERS =
 OBJECTS = $(SOURCES:.c=.o)

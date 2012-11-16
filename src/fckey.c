@@ -115,6 +115,13 @@ void fckey_set_max(fckey_t * key) {
     static int64_t pos[3] = {FCKEY_MAX, FCKEY_MAX, FCKEY_MAX};
     fckey_from_ipos(key, pos);
 }
+void fckey_xor(fckey_t * result, fckey_t * key1, fckey_t * key2) {
+    result->a[0] = key1->a[0] ^ key2->a[0];
+    result->a[1] = key1->a[1] ^ key2->a[1];
+}
+int fckey_is_zero(fckey_t * key) {
+    return (key->a[0] == 0) && (key->a[1] == 0);
+}
 #if 0
 #define FMT8 "%0.16lX "
 #define FMT16 FMT8 FMT8

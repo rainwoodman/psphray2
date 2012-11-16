@@ -15,4 +15,7 @@ void fckey_to_ipos(fckey_t * key, int64_t pos[3]);
 void fckey_from_ipos(fckey_t * key, int64_t pos[3]);
 void fckey_center(fckey_t * center, fckey_t * key1, fckey_t * key2);
 void fckey_set_max(fckey_t * key);
+int fckey_is_zero(fckey_t * key);
+void fckey_xor(fckey_t * result, fckey_t * key1, fckey_t * key2);
+
 

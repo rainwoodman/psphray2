@@ -12,6 +12,9 @@ typedef struct {
     int NReader;
 
     double MemImbalanceTol;
+    double MemAllocFactor;
+
+    int NodeSplitThresh;
 
     /* do not forget to add the bcast call to common_block_sync() */
     char * datadir;
@@ -58,4 +61,4 @@ void common_block_bootstrap();
 #include "par.h"
 #include "paramfile.h"
 #include "snapshot.h"
-
+#include "tree.h"

@@ -71,8 +71,13 @@ static void SECTION_IO() {
     }
 }
 
-static void SECTION_LOAD() {
-    _double("Load", "MemImbalanceTol", &CB.MemImbalanceTol, 0.05);
+static void SECTION_DOMAIN() {
+    _double("Domain", "MemImbalanceTol", &CB.MemImbalanceTol, 0.05);
+    _double("Domain", "MemAllocFactor", &CB.MemAllocFactor, 2.0);
+}
+
+static void SECTION_TREE() {
+    _integer("Tree", "NodeSplitThresh", &CB.NodeSplitThresh, 128);
 }
 
 void paramfile_read(char * filename) {
@@ -85,7 +90,8 @@ void paramfile_read(char * filename) {
     SECTION_COSMOLOGY();
     SECTION_UNIT();
     SECTION_IO();
-    SECTION_LOAD();
+    SECTION_DOMAIN();
+    SECTION_TREE();
 
     char * data = g_key_file_to_data(keyfile, NULL, NULL);
     char * usedfilename = g_strdup_printf("%s/paramfile-used", CB.datadir);

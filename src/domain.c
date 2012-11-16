@@ -112,15 +112,26 @@ void domain_decompose() {
 
     MPI_Allreduce(N, segN, NTask, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
 
-    par_allocate(segN[ThisTask], 0);
+    intptr_t Ntot;
+
+    for(int i = 0; i < NTask; i++) {
+        Ntot += segN[i];
+    }
+
+    intptr_t total = Ntot * CB.MemAllocFactor / NTask;
+    intptr_t before = (total - segN[ThisTask]) / 2;
+
+    /* so we have a few slots before and after, 
+     * to adjusted domain boundaries against the tree */
+    par_allocate(total - before, before);
     NPAR = segN[ThisTask];
+
 
     ROOTONLY {
         intptr_t segNmax=segN[0], segNmin=segN[0];
         for(int i = 0; i < NTask; i++) {
             segNmax = MAX(segNmax, segN[i]);
             segNmin = MIN(segNmax, segN[i]);
-            g_print("%d %ld\n", i, segN[i]);
         }
         g_message("max load %ld, min load %ld", segNmax, segNmin);
     }
@@ -161,4 +172,52 @@ void domain_decompose() {
     g_free(sendcounts);
     g_free(segN);
     g_free(POV);
+}
+
+void domain_adjust() {
+    Node * first = tree_locate_fckey(TREEROOT, &PAR(0).fckey);
+    Node * last = tree_locate_fckey(TREEROOT, &PAR(-1).fckey);
+    Node before;
+    Node behind;
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Sendrecv(first, sizeof(Node), MPI_BYTE, (ThisTask - 1 + NTask) % NTask, 1,
+        &behind, sizeof(Node), MPI_BYTE, (ThisTask + 1) % NTask, 1,
+        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    MPI_Sendrecv(last, sizeof(Node), MPI_BYTE, (ThisTask + 1) % NTask, 2,
+        &before, sizeof(Node), MPI_BYTE, (ThisTask - 1 + NTask) % NTask, 2,
+        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+    intptr_t in_before = 0;
+    intptr_t in_behind = 0;
+    intptr_t from_before = 0;
+    intptr_t from_behind = 0;
+
+    for(intptr_t i = 0; i < NPAR; i++) {
+        if(!tree_node_contains_fckey(&before, &PAR(i).fckey))
+            break;
+        in_before ++;
+    }
+    for(intptr_t i = NPAR - 1; i >= 0; i--) {
+        if(!tree_node_contains_fckey(&behind, &PAR(i).fckey))
+            break;
+        in_behind ++;
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Sendrecv(&in_before, 1, MPI_LONG, (ThisTask - 1 + NTask) % NTask, 1,
+        &from_behind, 1, MPI_LONG, (ThisTask + 1) % NTask, 1,
+        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    MPI_Sendrecv(&in_behind, 1, MPI_LONG, (ThisTask + 1) % NTask, 2,
+        &from_before, 1, MPI_LONG, (ThisTask - 1 + NTask) % NTask, 2,
+        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    
+    g_print("in_before %ld from_before %ld " NODE_FMT "\n", 
+            in_before, from_before, NODE_PRINT(before));
+    g_print("in_behind %ld from_behind %ld " NODE_FMT "\n", 
+            in_behind, from_behind, NODE_PRINT(behind));
 }

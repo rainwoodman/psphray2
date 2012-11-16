@@ -239,7 +239,13 @@ static void convert_to_fckey_t(char * in, char * out, size_t N, int elsize) {
 }
 
 static void snapshot_read_one(int fid, SnapHeader * h) {
-    snapshot_read_header(fid, h);
+    LEADERONLY {
+        g_message("2nd  time read header");
+        snapshot_read_header(fid, h);
+    }
+
+    MPI_Bcast(h, sizeof(SnapHeader), MPI_BYTE, 0, MPI_COMM_WORLD);
+
     size_t Ntot = 0;
     for(int i = 0; i < 6; i++) Ntot += h[0].N[i];
 

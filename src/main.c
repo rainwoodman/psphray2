@@ -21,7 +21,9 @@ static void log_handler
     const gchar *message,
     gpointer unused_data) {
     g_log_default_handler(log_domain, log_level, message, unused_data);
-    if(log_level & G_LOG_FLAG_FATAL) abort();
+    if(log_level & G_LOG_FLAG_FATAL & NTask > 1) {
+        abort();
+    }
 }
 
 int main(int argc, char * argv[]) {
@@ -62,13 +64,26 @@ int main(int argc, char * argv[]) {
         domain_decompose();
         par_sort_by_fckey(PAR_BUFFER_MAIN);
         par_free_input();
+        tree_build();
+        domain_adjust();
         #if 0
         for(int i = 0; i < NTask; i++) {
-            if(ThisTask == i)
-            g_print("local Par(%ld): ID = %ld - %ld, "
-              "KEY = " FCKEY_FMT " - " FCKEY_FMT "\n", 
-              NPAR, PAR(0).id, PAR(-1).id,
-              FCKEY_PRINT(PAR(0).fckey), FCKEY_PRINT(PAR(-1).fckey));
+            if(ThisTask == i) {
+                g_print("local Par(%ld): ID = %ld - %ld, "
+                  "KEY = " FCKEY_FMT " - " FCKEY_FMT "\n", 
+                  NPAR, PAR(0).id, PAR(-1).id,
+                  FCKEY_PRINT(PAR(0).fckey), FCKEY_PRINT(PAR(-1).fckey));
+                TreeIter * iter = tree_iter_new(TREEROOT);
+                Node * node = tree_iter_next_child(iter);
+                while(node) {
+                    if(node->type == NODE_TYPE_LEAF)
+                    g_print("node: " NODE_FMT "\n", 
+                        NODE_PRINT(node[0]));
+                    node = tree_iter_next_child(iter);
+                }
+
+                tree_iter_free(iter);
+            }
             MPI_Barrier(MPI_COMM_WORLD);
         }
         #endif
