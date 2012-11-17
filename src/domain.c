@@ -175,7 +175,12 @@ void domain_decompose() {
 }
 
 void domain_adjust() {
-    /* The algorithm:
+    /* 
+     *
+     * adjust the domain boundary, so that the tree nodes
+     * do not lie across domains.
+     *
+     * The algorithm:
      *
      * Consider two adjacent trees, and their nearby edge nodes A B.
      * Two cases:
@@ -275,17 +280,28 @@ void domain_adjust() {
                 MPI_COMM_WORLD, &head_req);
         }
     }
-    TAKETURNS {
-        g_print("%02d -> %02d (%05d) "
-                "%02d <- %02d (%05d) "
-                "%02d -> %02d (%05d) "
-                "%02d <- %02d (%05d) "
-                 "\n", 
-          ThisTask, PrevTask, head_sendcount,
-          ThisTask, PrevTask, head_recvcount,
-          ThisTask, NextTask, tail_sendcount,
-          ThisTask, NextTask, tail_recvcount
-          );
+    intptr_t exchange = head_sendcount + tail_sendcount;
+    intptr_t total_exchange = 0;
+    
+    MPI_Allreduce(&exchange, &total_exchange, 1, MPI_LONG, 
+            MPI_SUM, MPI_COMM_WORLD);
+
+    ROOTONLY {
+        g_message("exchange of %ld particles ", exchange);
+    }
+    if(total_exchange > 0) {
+        TAKETURNS {
+            g_print("%02d -> %02d (%05d) "
+                    "%02d <- %02d (%05d) "
+                    "%02d -> %02d (%05d) "
+                    "%02d <- %02d (%05d) "
+                     "\n", 
+              ThisTask, PrevTask, head_sendcount,
+              ThisTask, PrevTask, head_recvcount,
+              ThisTask, NextTask, tail_sendcount,
+              ThisTask, NextTask, tail_recvcount
+              );
+        }
     }
     if(do_head) MPI_Wait(&head_req, MPI_STATUS_IGNORE);
     if(do_tail) MPI_Wait(&tail_req, MPI_STATUS_IGNORE);
