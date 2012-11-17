@@ -68,13 +68,12 @@ int main(int argc, char * argv[]) {
         par_free(PAR_BUFFER_IN);
         tree_build();
 
-        inspect_par();
         domain_adjust();
-        inspect_par();
 
         tree_free();
         tree_build();
-        domain_adjust();
+        domain_mark_complete();
+        inspect_par();
     }
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_Finalize();
@@ -82,7 +81,7 @@ int main(int argc, char * argv[]) {
 }
 
 static void inspect_par() {
-    for(intptr_t i = 0; i < NPAR - 1; i++) {
+    for(intptr_t i = 0; NPAR && i < NPAR - 1; i++) {
         if(fckey_cmp(&PAR(i).fckey, &PAR(i + 1).fckey) > 0) {
             g_warning("%02d par unordered %ld and %ld " 
              FCKEY_FMT ", " FCKEY_FMT, 
@@ -96,18 +95,23 @@ static void inspect_par() {
               ThisTask, 
               NPAR, PAR(0).id, PAR(-1).id,
               FCKEY_PRINT(PAR(0).fckey), FCKEY_PRINT(PAR(-1).fckey));
-   //     inspect_tree();
+              inspect_tree();
     }
 }
 void inspect_tree() {
     TreeIter * iter = tree_iter_new(TREEROOT);
     Node * node = tree_iter_next(iter);
+    intptr_t count = 0;
+    g_print("%02d tree dump\n", ThisTask);
     while(node) {
-        if(node->type == NODE_TYPE_LEAF)
-        g_print("node: " NODE_FMT "\n", 
-            NODE_PRINT(node[0]));
+        #if 0
+        if(node->type != NODE_TYPE_LEAF)
+        #endif
+        g_print(NODE_FMT "\n", 
+                NODE_PRINT(node[0]));
         node = tree_iter_next(iter);
+        count ++;
     }
-
+    g_print("%02d total %ld\n", ThisTask, count);
     tree_iter_free(iter);
 }

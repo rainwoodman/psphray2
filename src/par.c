@@ -67,8 +67,9 @@ par_t * par_prepend(PSystem * psys, intptr_t add) {
         psys->size += add;
     } else {
         g_error("not enough space on front need %ld has %ld\n",
-          add, psys->data - psys->data);
+          add, psys->data - psys->base);
     }
+    g_message(" new par base = %p %p", psys->data, psys->data + add);
     if(add > 0) return psys->data;
     else return psys->data + add;
 }

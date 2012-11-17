@@ -52,6 +52,8 @@ typedef struct {
 extern CommonBlock CB;
 extern int ThisTask;
 extern int NTask;
+extern int PrevTask;
+extern int NextTask;
 void common_block_sync();
 void common_block_bootstrap();
 

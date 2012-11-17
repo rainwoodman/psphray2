@@ -192,8 +192,6 @@ void domain_adjust() {
      *      compare len(A') and len(A). migrate
      *      the shorter one.
      *  */
-    int PrevTask = (ThisTask - 1 + NTask) % NTask,
-        NextTask = (ThisTask + 1) % NTask;
 
     Node * first = tree_locate_fckey(TREEROOT, &PAR(0).fckey);
     Node * last = tree_locate_fckey(TREEROOT, &PAR(-1).fckey);
@@ -287,7 +285,7 @@ void domain_adjust() {
             MPI_SUM, MPI_COMM_WORLD);
 
     ROOTONLY {
-        g_message("exchange of %ld particles ", exchange);
+        g_message("exchange of %ld particles ", total_exchange);
     }
     if(total_exchange > 0) {
         TAKETURNS {
@@ -312,4 +310,59 @@ void domain_adjust() {
     MPI_Type_free(&partype);
     g_slice_free(Node, before);
     g_slice_free(Node, behind);
+}
+
+void domain_mark_complete() {
+    fckey_t * before = g_slice_new(fckey_t);
+    fckey_t * behind = g_slice_new(fckey_t);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Sendrecv(&PAR(0).fckey, sizeof(fckey_t), MPI_BYTE, PrevTask, 1,
+        behind, sizeof(fckey_t), MPI_BYTE, NextTask, 1,
+        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    MPI_Sendrecv(&PAR(-1).fckey, sizeof(fckey_t), MPI_BYTE, NextTask, 2,
+        before, sizeof(fckey_t), MPI_BYTE, PrevTask, 2,
+        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    TreeIter * iter = tree_iter_new(TREEROOT);
+    intptr_t complete_count = 0;
+    intptr_t incomplete_count = 0;
+    for(Node * node = tree_iter_next(iter);
+        node;
+        node = tree_iter_next(iter)) {
+        if(ThisTask != 0 && 
+            tree_node_contains_fckey(node, before)) {
+            node->complete = FALSE;
+            incomplete_count ++;
+          #if 0
+            g_print("incomplete" NODE_FMT ", key" FCKEY_FMT "\n",
+                NODE_PRINT(node[0]), FCKEY_PRINT(before[0]));
+          #endif
+            continue;
+        }
+        if(ThisTask != NTask -1 &&
+            tree_node_contains_fckey(node, behind)) {
+            node->complete = FALSE;
+            incomplete_count ++;
+          #if 0
+            g_print("incomplete" NODE_FMT ", key" FCKEY_FMT "\n",
+                NODE_PRINT(node[0]), FCKEY_PRINT(behind[0]));
+          #endif
+            continue;
+        }
+        node->complete = TRUE;
+        complete_count ++;
+    }
+    tree_iter_free(iter);
+    g_slice_free(fckey_t, behind);
+    g_slice_free(fckey_t, before);
+
+    TAKETURNS {
+        g_print("%02d complete %ld incomplete %ld\n", ThisTask,
+            complete_count, incomplete_count);
+    }
 }

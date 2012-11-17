@@ -6,6 +6,7 @@
 CommonBlock CB = {0};
 int ThisTask;
 int NTask;
+int PrevTask, NextTask;
 
 void bcast_string(char ** string) {
     int len;
@@ -23,6 +24,8 @@ void bcast_string(char ** string) {
 void common_block_bootstrap() {
     MPI_Comm_rank(MPI_COMM_WORLD, &ThisTask);
     MPI_Comm_size(MPI_COMM_WORLD, &NTask);
+    PrevTask = (ThisTask - 1 + NTask) % NTask,
+    NextTask = (ThisTask + 1) % NTask;
 }
 
 void common_block_sync() {

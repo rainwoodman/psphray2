@@ -77,7 +77,7 @@ static void SECTION_DOMAIN() {
 }
 
 static void SECTION_TREE() {
-    _integer("Tree", "NodeSplitThresh", &CB.NodeSplitThresh, 32);
+    _integer("Tree", "NodeSplitThresh", &CB.NodeSplitThresh, 64);
 }
 
 void paramfile_read(char * filename) {
