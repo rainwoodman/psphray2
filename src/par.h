@@ -14,22 +14,29 @@ typedef struct {
     istate_t istate;
 } par_t;
 
-extern par_t * _PAR;
-extern size_t NPAR;
-extern size_t _PAR_size;
-#define PAR(i) (_PAR[((signed)(i)<0)?((i)+NPAR):(i)])
+typedef struct {
+    char name[8];
+    par_t * base;
+    par_t * data;
+    size_t length;
+    size_t size;
+} PSystem;
 
-extern par_t * _PARin;
-extern size_t NPARin;
-#define PARin(i) (_PARin[((signed)(i)<0)?((i)+NPARin):(i)])
-intptr_t par_append(intptr_t add);
-void par_prepend(intptr_t add);
-void par_allocate(size_t size, size_t before);
-void par_allocate_input(size_t size);
-void par_free_input();
-#define PAR_BUFFER_IN 0
-#define PAR_BUFFER_MAIN 1
-void par_sort_by_fckey(int which);
-intptr_t par_search_by_fckey(fckey_t * key, int which);
+extern PSystem PAR_IN;
+extern PSystem PAR_MAIN;
+#define PAR_BUFFER_IN &PAR_IN
+#define PAR_BUFFER_MAIN &PAR_MAIN
+#define NPAR PAR_MAIN.length
+#define PAR(i) (PAR_MAIN.data[((signed)(i)<0)?((i)+NPAR):(i)])
+
+#define PARin(i) (PAR_IN.data[((signed)(i)<0)?((i)+NPARin):(i)])
+#define NPARin PAR_IN.length
+
+void par_reserve(PSystem * psys, size_t size, size_t before);
+par_t * par_append(PSystem * psys, intptr_t add);
+par_t * par_prepend(PSystem * psys, intptr_t add);
+void par_free(PSystem * psys);
+void par_sort_by_fckey(PSystem * psys);
+intptr_t par_search_by_fckey(PSystem * psys, fckey_t * key);
 
 #define elsizeof(type, el) sizeof(((type *) 0)->el)

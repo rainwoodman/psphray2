@@ -3,77 +3,74 @@
 #include <stdlib.h>
 #include "commonblock.h"
 
-par_t * _PAR = NULL;
-size_t NPAR = 0;
-size_t _PAR_size = 0;
-static par_t * _PARbase = NULL;
-
-par_t * _PARin = NULL;
-size_t NPARin = 0;
+PSystem PAR_IN = { "INPUT", 0 };
+PSystem PAR_MAIN = { "MAIN", 0 };
 
 static intptr_t searchsorted (void * key, void * array, 
       size_t len, size_t elsize, GCompareFunc compare);
 
-void par_allocate_input(size_t size) {
-    _PARin = g_malloc(size* sizeof(par_t));
+void par_free(PSystem * psys) {
+    g_free(psys->base);
+    psys->data = NULL;
+    psys->size = 0;
+    psys->length = 0;
 }
 
-void par_free_input() {
-    g_free(_PARin);
-    _PARin = NULL;
-}
-
-void par_allocate(size_t size, size_t before) {
-    _PARbase = g_malloc((size + before)* sizeof(par_t));
-    _PAR_size = size;
-    _PAR = _PARbase + before;
+void par_reserve(PSystem * psys, size_t size, size_t before) {
+    psys->base = g_malloc((size + before)* sizeof(par_t));
+    psys->size = size;
+    psys->data = psys->base + before;
 }
 
     static int _par_compare_fckey(par_t * par1, par_t * par2) {
         return fckey_cmp(&par1->fckey, &par2->fckey);
     }
 
-void par_sort_by_fckey(int which) {
-    if(which == PAR_BUFFER_IN) {
-        qsort(_PARin, NPARin, sizeof(par_t), (GCompareFunc) _par_compare_fckey);
-    } else {
-        qsort(_PAR, NPAR, sizeof(par_t), (GCompareFunc) _par_compare_fckey);
-    }
+void par_sort_by_fckey(PSystem * psys) {
+    qsort(psys->data, psys->length, 
+            sizeof(par_t), (GCompareFunc) _par_compare_fckey);
 }
 
     static int _par_compare_fckey2(par_t * par, fckey_t * target) {
         return fckey_cmp(&par->fckey, target);
     }
 
-intptr_t par_search_by_fckey(fckey_t * key, int which) {
-    if(which == PAR_BUFFER_IN) {
-        return searchsorted(key, _PARin, NPARin, sizeof(par_t), 
-        (GCompareFunc) _par_compare_fckey2);
-    } else {
-        return searchsorted(key, _PAR, NPAR, sizeof(par_t), 
-        (GCompareFunc) _par_compare_fckey2);
-    }
+intptr_t par_search_by_fckey(PSystem * psys, fckey_t * key) {
+    return searchsorted(key, psys->data, psys->length, 
+        sizeof(par_t), (GCompareFunc) _par_compare_fckey2);
 }
 
-intptr_t par_append(intptr_t addsize) {
-    if(NPAR + addsize <= _PAR_size) {
-        NPAR += addsize;
+par_t * par_append(PSystem * psys, intptr_t add) {
+    /* returns a pointer where you can put the new data in */
+    /* warning any index reference to the psys will be invalid,
+     * if add is negative, truncates the psys and returns 
+     * a pointer to the truncated data */
+    if(psys->length + add <= psys->size) {
+        psys->length += add;
     } else {
         g_error("not enough space on rear needed %ld has %ld\n",
-             addsize, _PAR_size - NPAR);
+             add, psys->size - psys->length);
     }
-    return NPAR - addsize;
+    if(add > 0) {
+        return psys->data + psys->length - add;
+    } else {
+        return psys->data + psys->length;
+    }
 }
 
-void par_prepend(intptr_t addsize) {
-    if(addsize <= _PAR - _PARbase) {
-        _PAR -= addsize;
-        _PAR_size += addsize;
-        NPAR += addsize;
+par_t * par_prepend(PSystem * psys, intptr_t add) {
+    /* if add is negative, truncates the psys and returns 
+     * a pointer to the truncated data */
+    if(add <= psys->data - psys->base) {
+        psys->data -= add;
+        psys->length += add;
+        psys->size += add;
     } else {
         g_error("not enough space on front need %ld has %ld\n",
-          addsize, _PAR - _PARbase);
+          add, psys->data - psys->data);
     }
+    if(add > 0) return psys->data;
+    else return psys->data + add;
 }
 
 static intptr_t searchsorted (void * target, void * array, 

@@ -65,7 +65,7 @@ int main(int argc, char * argv[]) {
         par_sort_by_fckey(PAR_BUFFER_IN);
         domain_decompose();
         par_sort_by_fckey(PAR_BUFFER_MAIN);
-        par_free_input();
+        par_free(PAR_BUFFER_IN);
         tree_build();
 
         inspect_par();
@@ -96,7 +96,7 @@ static void inspect_par() {
               ThisTask, 
               NPAR, PAR(0).id, PAR(-1).id,
               FCKEY_PRINT(PAR(0).fckey), FCKEY_PRINT(PAR(-1).fckey));
-//        inspect_tree();
+   //     inspect_tree();
     }
 }
 void inspect_tree() {

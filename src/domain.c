@@ -5,14 +5,14 @@
 
 static void cumbincount(fckey_t * POV, intptr_t * N) {
     for(int i = 0; i < NTask - 1; i++) {
-        N[i] = par_search_by_fckey(&POV[i], PAR_BUFFER_IN);
+        N[i] = par_search_by_fckey(PAR_BUFFER_IN, &POV[i]);
     }
     N[NTask - 1] = NPARin;
     MPI_Allreduce(MPI_IN_PLACE, N, NTask, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
 }
 static void bincount_local(fckey_t * POV, intptr_t * N) {
     for(int i = 0; i < NTask - 1; i++) {
-        N[i] = par_search_by_fckey(&POV[i], PAR_BUFFER_IN);
+        N[i] = par_search_by_fckey(PAR_BUFFER_IN, &POV[i]);
     }
     N[NTask - 1] = NPARin;
     for(int i = NTask - 1; i > 0; i--) {
@@ -123,7 +123,7 @@ void domain_decompose() {
 
     /* so we have a few slots before and after, 
      * to adjusted domain boundaries against the tree */
-    par_allocate(total - before, before);
+    par_reserve(PAR_BUFFER_MAIN, total - before, before);
     NPAR = segN[ThisTask];
 
 
@@ -241,16 +241,16 @@ void domain_adjust() {
         if(last->npar < behind->npar) {
             /* send */
             tail_sendcount = last->npar;
-            par_t * sendbuf = &PAR(-tail_sendcount);
-            par_append(-tail_sendcount);
+            par_t * sendbuf = par_append(PAR_BUFFER_MAIN, 
+                                   -tail_sendcount);
             MPI_Isend(sendbuf, tail_sendcount, partype,
                 NextTask, 6,
                 MPI_COMM_WORLD, &tail_req);
         } else {
             /* recv */ 
             tail_recvcount = behind->npar;
-            par_t * recvbuf = &PAR(NPAR);
-            par_append(tail_recvcount);
+            par_t * recvbuf = par_append(PAR_BUFFER_MAIN, 
+                              tail_recvcount);
             MPI_Irecv(recvbuf, tail_recvcount, partype, 
                 NextTask, 7, 
                 MPI_COMM_WORLD, &tail_req);
@@ -260,16 +260,16 @@ void domain_adjust() {
         if(first->npar > before->npar) {
             /* recv */
             head_recvcount = before->npar;
-            par_prepend(head_recvcount);
-            par_t * recvbuf = &PAR(0);
+            par_t * recvbuf = par_prepend(PAR_BUFFER_MAIN, 
+                                head_recvcount);
             MPI_Irecv(recvbuf, head_recvcount, partype, 
                 PrevTask, 6,
                 MPI_COMM_WORLD, &head_req);
         } else {
             /* send */
             head_sendcount = first->npar;
-            par_t * sendbuf = &PAR(0);
-            par_prepend(-head_sendcount);
+            par_t * sendbuf = par_prepend(PAR_BUFFER_MAIN, 
+                               -head_sendcount);
             MPI_Isend(sendbuf, head_sendcount, partype, 
                 PrevTask, 7,
                 MPI_COMM_WORLD, &head_req);

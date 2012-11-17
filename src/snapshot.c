@@ -271,19 +271,15 @@ static void snapshot_read_one(int fid, SnapHeader * h) {
         cast = g_malloc(MAX(sizeof(float_t) * 3, sizeof(long_t)) * h[0].Ngas);
     }
 
-    size_t END = NPARin;
+    par_t * recvbuf = par_append(PAR_BUFFER_IN,  
+         snapshot_scatter_block(NULL, h[0].Ngas, NULL, 0, 0));
 
-    NPARin += snapshot_scatter_block(NULL, h[0].Ngas, NULL, 0, 0);
-
-    TAKETURNS {
-        g_message("%02d NPARin = %ld ", ThisTask, NPARin);
-    }
     /* now buffer is the file on LEADER */
     p = buffer + 256 + 4 + 4; /* skip header */
 
     /*pos*/
     convert_to_fckey_t(p + 4, cast, h[0].Ngas, snap_float_elsize);
-    snapshot_scatter_block(cast, h[0].Ngas, & PARin(END), 
+    snapshot_scatter_block(cast, h[0].Ngas, recvbuf, 
         offsetof(par_t, fckey), elsizeof(par_t, fckey));
     p += snap_float_elsize * 3 * Ntot + 4 + 4;
     MPI_Barrier(ReaderComm);
@@ -292,7 +288,7 @@ static void snapshot_read_one(int fid, SnapHeader * h) {
 
     /* id */
     cast_to_long_t(p + 4, cast, h[0].Ngas, CB.IDByteSize);
-    snapshot_scatter_block(cast, h[0].Ngas, & PARin(END), 
+    snapshot_scatter_block(cast, h[0].Ngas, recvbuf, 
           offsetof(par_t, id), elsizeof(par_t, id));
     p += CB.IDByteSize * Ntot + 4 + 4;
 
@@ -304,7 +300,7 @@ static void snapshot_read_one(int fid, SnapHeader * h) {
         for(int i = 0; i < h[0].Ngas; i++) {
             ((float_t *) cast)[i] = h[0].masstab[0];
         }
-    snapshot_scatter_block(cast, h[0].Ngas, & PARin(END), 
+    snapshot_scatter_block(cast, h[0].Ngas, recvbuf, 
         offsetof(par_t, mass), elsizeof(par_t, mass));
     p += 4 + 4;
     /* mass tab handling */
@@ -314,21 +310,20 @@ static void snapshot_read_one(int fid, SnapHeader * h) {
 
     /* ie */
     cast_to_float_t(p + 4, cast, h[0].Ngas, snap_float_elsize);
-    snapshot_scatter_block(cast, h[0].Ngas, & PARin(END), 
+    snapshot_scatter_block(cast, h[0].Ngas, recvbuf, 
         offsetof(par_t, T), elsizeof(par_t, T));
     p += snap_float_elsize * h[0].Ngas + 4 + 4;
 
     LEADERONLY {
         g_free(cast);
         g_mapped_file_unref(file);
-        g_message("finished with file %d", fid);
     }
 }
 
 void snapshot_read() {
     size_t Ngas = snapshot_prepare();
     NPARin = 0;
-    par_allocate_input(Ngas * 1.1);
+    par_reserve(PAR_BUFFER_IN, Ngas * 1.1, 0);
     int fid;
     for(fid = ReaderColor * Nfile / NReader;
         fid < (ReaderColor + 1) * Nfile / NReader;
