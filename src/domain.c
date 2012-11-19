@@ -102,6 +102,7 @@ static void find_pov(fckey_t * POV) {
 
 void domain_decompose() {
     /* after domain_decompose, PAR is available */
+    par_sort_by_fckey(PAR_BUFFER_IN);
     fckey_t * POV = g_new0(fckey_t, NTask);
     intptr_t * segN = g_new0(intptr_t, NTask);
     intptr_t * N = g_new0(intptr_t, NTask);
@@ -172,12 +173,71 @@ void domain_decompose() {
     g_free(sendcounts);
     g_free(segN);
     g_free(POV);
+
+    par_sort_by_fckey(PAR_BUFFER_MAIN);
+    par_free(PAR_BUFFER_IN);
 }
 
-void domain_adjust() {
+static void domain_mark_complete() {
+    fckey_t * before = g_slice_new(fckey_t);
+    fckey_t * behind = g_slice_new(fckey_t);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Sendrecv(&PAR(0).fckey, sizeof(fckey_t), MPI_BYTE, PrevTask, 1,
+        behind, sizeof(fckey_t), MPI_BYTE, NextTask, 1,
+        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    MPI_Sendrecv(&PAR(-1).fckey, sizeof(fckey_t), MPI_BYTE, NextTask, 2,
+        before, sizeof(fckey_t), MPI_BYTE, PrevTask, 2,
+        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    TreeIter * iter = tree_iter_new(TREEROOT);
+    intptr_t complete_count = 0;
+    intptr_t incomplete_count = 0;
+    for(Node * node = tree_iter_next(iter);
+        node;
+        node = tree_iter_next(iter)) {
+        if(ThisTask != 0 && 
+            tree_node_contains_fckey(node, before)) {
+            node->complete = FALSE;
+            incomplete_count ++;
+          #if 0
+            g_print("incomplete" NODE_FMT ", key" FCKEY_FMT "\n",
+                NODE_PRINT(node[0]), FCKEY_PRINT(before[0]));
+          #endif
+            continue;
+        }
+        if(ThisTask != NTask -1 &&
+            tree_node_contains_fckey(node, behind)) {
+            node->complete = FALSE;
+            incomplete_count ++;
+          #if 0
+            g_print("incomplete" NODE_FMT ", key" FCKEY_FMT "\n",
+                NODE_PRINT(node[0]), FCKEY_PRINT(behind[0]));
+          #endif
+            continue;
+        }
+        node->complete = TRUE;
+        complete_count ++;
+    }
+    tree_iter_free(iter);
+    g_slice_free(fckey_t, behind);
+    g_slice_free(fckey_t, before);
+
+    TAKETURNS {
+        g_print("%02d complete %ld incomplete %ld\n", ThisTask,
+            complete_count, incomplete_count);
+    }
+}
+
+void domain_build_tree() {
     /* 
      *
-     * adjust the domain boundary, so that the tree nodes
+     * adjust the domain boundary to build a tree, 
+     * so that the tree nodes
      * do not lie across domains.
      *
      * The algorithm:
@@ -192,6 +252,8 @@ void domain_adjust() {
      *      compare len(A') and len(A). migrate
      *      the shorter one.
      *  */
+
+    tree_build();
 
     Node * first = tree_locate_fckey(TREEROOT, &PAR(0).fckey);
     Node * last = tree_locate_fckey(TREEROOT, &PAR(-1).fckey);
@@ -310,59 +372,8 @@ void domain_adjust() {
     MPI_Type_free(&partype);
     g_slice_free(Node, before);
     g_slice_free(Node, behind);
-}
 
-void domain_mark_complete() {
-    fckey_t * before = g_slice_new(fckey_t);
-    fckey_t * behind = g_slice_new(fckey_t);
-
-    MPI_Barrier(MPI_COMM_WORLD);
-    MPI_Sendrecv(&PAR(0).fckey, sizeof(fckey_t), MPI_BYTE, PrevTask, 1,
-        behind, sizeof(fckey_t), MPI_BYTE, NextTask, 1,
-        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    MPI_Sendrecv(&PAR(-1).fckey, sizeof(fckey_t), MPI_BYTE, NextTask, 2,
-        before, sizeof(fckey_t), MPI_BYTE, PrevTask, 2,
-        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    TreeIter * iter = tree_iter_new(TREEROOT);
-    intptr_t complete_count = 0;
-    intptr_t incomplete_count = 0;
-    for(Node * node = tree_iter_next(iter);
-        node;
-        node = tree_iter_next(iter)) {
-        if(ThisTask != 0 && 
-            tree_node_contains_fckey(node, before)) {
-            node->complete = FALSE;
-            incomplete_count ++;
-          #if 0
-            g_print("incomplete" NODE_FMT ", key" FCKEY_FMT "\n",
-                NODE_PRINT(node[0]), FCKEY_PRINT(before[0]));
-          #endif
-            continue;
-        }
-        if(ThisTask != NTask -1 &&
-            tree_node_contains_fckey(node, behind)) {
-            node->complete = FALSE;
-            incomplete_count ++;
-          #if 0
-            g_print("incomplete" NODE_FMT ", key" FCKEY_FMT "\n",
-                NODE_PRINT(node[0]), FCKEY_PRINT(behind[0]));
-          #endif
-            continue;
-        }
-        node->complete = TRUE;
-        complete_count ++;
-    }
-    tree_iter_free(iter);
-    g_slice_free(fckey_t, behind);
-    g_slice_free(fckey_t, before);
-
-    TAKETURNS {
-        g_print("%02d complete %ld incomplete %ld\n", ThisTask,
-            complete_count, incomplete_count);
-    }
+    tree_free();
+    tree_build();
+    domain_mark_complete();
 }

@@ -47,6 +47,15 @@ typedef struct {
         double OmegaM;
         double OmegaL;
     } C;
+    struct {
+        double CritPhysDensity;
+        double CritOverDensity;
+        double FactorSN;
+        double FactorEVP;
+        double TempSupernova;
+        double TempClouds;
+        double MaxSfrTimescale;
+    } SFREFF;
 } CommonBlock;
 
 extern CommonBlock CB;
@@ -68,4 +77,4 @@ void common_block_bootstrap();
 #include "paramfile.h"
 #include "snapshot.h"
 #include "tree.h"
-
+#include "gadget.h"

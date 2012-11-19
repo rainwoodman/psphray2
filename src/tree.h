@@ -1,7 +1,8 @@
 #define NODE_TYPE_INNER 'N'
 #define NODE_TYPE_LEAF 'L'
-typedef struct _InnerNode InnerNode;
-typedef struct _Node Node;
+struct _InnerNode;
+struct _Node;
+
 #define NODE_COMMON \
     char type; \
     char order; \
@@ -10,8 +11,8 @@ typedef struct _Node Node;
     int32_t npar;  \
     par_t * first; \
     fckey_t key; \
-    InnerNode * parent; \
-    Node * link; \ 
+    struct _InnerNode * parent; \
+    struct _Node * link; 
 /* link is used in to free the tree */
 
 typedef struct _Node {

@@ -89,23 +89,24 @@ static void snapshot_read_header(int fid, SnapHeader * h) {
     g_mapped_file_unref(file);
 }
 
-static size_t snapshot_prepare() {
-    /* returns number of pars will be read into this task */
-    SnapHeader h;
+static intptr_t snapshot_prepare(SnapHeader * h) {
     ROOTONLY {
-        snapshot_read_header(0, &h);
-        if(CB.C.h != h.h) {
+        snapshot_read_header(0, h);
+        if(CB.C.h != h->h) {
             g_warning("snapshot file h mismatch");
         }
+        if(CB.BoxSize != h->BoxSize) {
+            CB.BoxSize = h->BoxSize;
+            g_warning("boxsize mismatch!, using %g from snapshot", h->BoxSize);
+        }
     }
-    MPI_Bcast(&h, sizeof(SnapHeader), MPI_BYTE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(h, sizeof(SnapHeader), MPI_BYTE, 0, MPI_COMM_WORLD);
 
-    Nfile = h.Nfile;
+    Nfile = h->Nfile;
     NReader = CB.NReader;
 
-    CB.BoxSize = h.BoxSize;
-    if(NReader > h.Nfile) {
-        NReader = h.Nfile;
+    if(NReader > h->Nfile) {
+        NReader = h->Nfile;
         ROOTONLY {
             g_warning("NReader bigger than files, using Nfile");
         }
@@ -314,14 +315,28 @@ static void snapshot_read_one(int fid, SnapHeader * h) {
         offsetof(par_t, T), elsizeof(par_t, T));
     p += snap_float_elsize * h[0].Ngas + 4 + 4;
 
+    /* rho */
+    cast_to_float_t(p + 4, cast, h[0].Ngas, snap_float_elsize);
+    snapshot_scatter_block(cast, h[0].Ngas, recvbuf, 
+        offsetof(par_t, rho), elsizeof(par_t, rho));
+    p += snap_float_elsize * h[0].Ngas + 4 + 4;
+
+    /* ye */
+    #if 0
+    cast_to_float_t(p + 4, cast, h[0].Ngas, snap_float_elsize);
+    snapshot_scatter_block(cast, h[0].Ngas, recvbuf, 
+        offsetof(par_t, ye), elsizeof(par_t, ye));
+    #endif
+    p += snap_float_elsize * h[0].Ngas + 4 + 4;
+
     LEADERONLY {
         g_free(cast);
         g_mapped_file_unref(file);
     }
 }
 
-void snapshot_read() {
-    size_t Ngas = snapshot_prepare();
+void snapshot_read(SnapHeader * h) {
+    size_t Ngas = snapshot_prepare(h);
     NPARin = 0;
     par_reserve(PAR_BUFFER_IN, Ngas * 1.1, 0);
     int fid;

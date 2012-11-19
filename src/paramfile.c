@@ -5,14 +5,14 @@
 static GError * error = NULL;
 static GKeyFile * keyfile = NULL;
 
-#define SCHEMA(name, type, mustval) \
-static int _ ## name (char * group, char * key, type * value, type def) { \
+#define SCHEMA(name, type) \
+static int __ ## name (char * group, char * key, type * value, type def, int required) { \
     if(!g_key_file_has_group(keyfile, group) \
         || !g_key_file_has_key(keyfile, group, key, &error)) { \
         if(error != NULL) { \
             g_error("paramfile %s/%s:%s", group, key, error->message); \
         } \
-        if(def == mustval) { \
+        if(required) { \
             g_error("paramfile %s/%s is required", group, key); \
         } \
         g_key_file_set_ ## name(keyfile, group, key, def); \
@@ -21,28 +21,33 @@ static int _ ## name (char * group, char * key, type * value, type def) { \
     } \
     value[0] = g_key_file_get_ ## name(keyfile, group, key, &error); \
     return TRUE; \
+} \
+static int d ## name (char * group, char * key, type * value, type def) { \
+    return __ ## name(group, key, value, def, 0); \
+} \
+static int _ ## name (char * group, char * key, type * value) { \
+    return __ ## name(group, key, value, (type) 0, 1); \
 }
-#define BADFLOAT g_strtod("NAN(BAD)",NULL)
-#define BADINT 0xdeadbeef
-SCHEMA(double, double, BADFLOAT);
-SCHEMA(integer, int, BADINT);
-SCHEMA(string, char *, NULL) ;
+
+SCHEMA(double, double);
+SCHEMA(integer, int);
+SCHEMA(string, char *) ;
 
 static void SECTION_COSMOLOGY() {
-    _double("Cosmology", "h", &CB.C.h, 0.72);
-    _double("Cosmology", "H", &CB.C.G, 0.1);
-    _double("Cosmology", "G", &CB.C.G, 43007.1);
-    _double("Cosmology", "C", &CB.C.C, 3e5);
-    _double("Cosmology", "OmegaB", &CB.C.OmegaB, 0.044);
-    _double("Cosmology", "OmegaM", &CB.C.OmegaM, 0.26);
-    _double("Cosmology", "OmegaL", &CB.C.OmegaL, 0.74);
+    ddouble("Cosmology", "h", &CB.C.h, 0.72);
+    ddouble("Cosmology", "H", &CB.C.H, 0.1);
+    ddouble("Cosmology", "G", &CB.C.G, 43007.1);
+    ddouble("Cosmology", "C", &CB.C.C, 3e5);
+    ddouble("Cosmology", "OmegaB", &CB.C.OmegaB, 0.044);
+    ddouble("Cosmology", "OmegaM", &CB.C.OmegaM, 0.26);
+    ddouble("Cosmology", "OmegaL", &CB.C.OmegaL, 0.74);
 }
 static void SECTION_UNIT() {
     double UnitLength_in_cm, UnitMass_in_g, UnitVelocity_in_cm_per_s;
 
-    _double("Unit", "UnitLength_in_cm", &UnitLength_in_cm, 3.085678e21); // 1 kpc/h
-    _double("Unit", "UnitMass_in_g", &UnitMass_in_g, 1.989e43);  //1e10 solar masses/h
-    _double("Unit", "UnitVelocity_in_cm_per_s", &UnitVelocity_in_cm_per_s, 1e5); //1 km/sec
+    ddouble("Unit", "UnitLength_in_cm", &UnitLength_in_cm, 3.085678e21); // 1 kpc/h
+    ddouble("Unit", "UnitMass_in_g", &UnitMass_in_g, 1.989e43);  //1e10 solar masses/h
+    ddouble("Unit", "UnitVelocity_in_cm_per_s", &UnitVelocity_in_cm_per_s, 1e5); //1 km/sec
     CB.U.CM_h = 1 / (UnitLength_in_cm);
     CB.U.CM = CB.U.CM_h * CB.C.h;
     CB.U.SECOND_h = 1 / (UnitLength_in_cm / UnitVelocity_in_cm_per_s);
@@ -57,13 +62,13 @@ static void SECTION_UNIT() {
 }
 
 static void SECTION_IO() {
-    _string("IO", "datadir", &CB.datadir, NULL);
-    _string("IO", "inputbase", &CB.inputbase, NULL);
-    _string("IO", "snapbase", &CB.snapbase, NULL);
-    _integer("IO", "SnapNumMajorBegin", &CB.SnapNumMajorBegin, BADINT);
-    _integer("IO", "SnapNumMajorEnd", &CB.SnapNumMajorEnd, BADINT);
-    _integer("IO", "NumReader", &CB.NReader, BADINT);
-    _integer("IO", "IDByteSize", &CB.IDByteSize, 8);
+    _string("IO", "datadir", &CB.datadir);
+    _string("IO", "inputbase", &CB.inputbase);
+    _string("IO", "snapbase", &CB.snapbase);
+    _integer("IO", "SnapNumMajorBegin", &CB.SnapNumMajorBegin);
+    dinteger("IO", "SnapNumMajorEnd", &CB.SnapNumMajorEnd, CB.SnapNumMajorBegin + 1);
+    dinteger("IO", "NumReader", &CB.NReader, NTask);
+    dinteger("IO", "IDByteSize", &CB.IDByteSize, 8);
 
     if(CB.NReader > NTask) {
         g_warning("too many readers requested, using %d", NTask);
@@ -72,14 +77,23 @@ static void SECTION_IO() {
 }
 
 static void SECTION_DOMAIN() {
-    _double("Domain", "MemImbalanceTol", &CB.MemImbalanceTol, 0.05);
-    _double("Domain", "MemAllocFactor", &CB.MemAllocFactor, 2.0);
+    ddouble("Domain", "MemImbalanceTol", &CB.MemImbalanceTol, 0.05);
+    ddouble("Domain", "MemAllocFactor", &CB.MemAllocFactor, 2.0);
 }
 
 static void SECTION_TREE() {
-    _integer("Tree", "NodeSplitThresh", &CB.NodeSplitThresh, 64);
+    dinteger("Tree", "NodeSplitThresh", &CB.NodeSplitThresh, 64);
 }
 
+static void SECTION_SFREFF() {
+    ddouble("StarFormation", "CritOverDensity", &CB.SFREFF.CritOverDensity, 57.7);
+    ddouble("StarFormation", "CritPhysDensity", &CB.SFREFF.CritPhysDensity, 0);
+    ddouble("StarFormation", "FactorSN", &CB.SFREFF.FactorSN, 0.1);
+    ddouble("StarFormation", "FactorEVP", &CB.SFREFF.FactorEVP, 1000.0);
+    ddouble("StarFormation", "TempSupernova", &CB.SFREFF.TempSupernova, 1e8);
+    ddouble("StarFormation", "TempClouds", &CB.SFREFF.TempClouds, 1e3);
+    ddouble("StarFormation", "MaxSfrTimescale", &CB.SFREFF.MaxSfrTimescale, 1.5);
+}
 void paramfile_read(char * filename) {
     keyfile = g_key_file_new();
     error = NULL;
@@ -92,6 +106,7 @@ void paramfile_read(char * filename) {
     SECTION_IO();
     SECTION_DOMAIN();
     SECTION_TREE();
+    SECTION_SFREFF();
 
     char * data = g_key_file_to_data(keyfile, NULL, NULL);
     char * usedfilename = g_strdup_printf("%s/paramfile-used", CB.datadir);

@@ -55,25 +55,25 @@ int main(int argc, char * argv[]) {
     common_block_sync();
     MPI_Barrier(MPI_COMM_WORLD);
 
+    init_gadget();
     g_debug("MPI Task: %d of %d, datadir=%s", ThisTask, NTask, CB.datadir);
     MPI_Barrier(MPI_COMM_WORLD);
 
     for(CB.SnapNumMajor = CB.SnapNumMajorBegin;
         CB.SnapNumMajor < CB.SnapNumMajorEnd;
         CB.SnapNumMajor ++) {
-        snapshot_read();
-        par_sort_by_fckey(PAR_BUFFER_IN);
+        SnapHeader h;
+
+        snapshot_read(&h);
+        CB.a = h.a;
+
         domain_decompose();
-        par_sort_by_fckey(PAR_BUFFER_MAIN);
-        par_free(PAR_BUFFER_IN);
-        tree_build();
 
-        domain_adjust();
+        domain_build_tree();
 
-        tree_free();
-        tree_build();
-        domain_mark_complete();
-        inspect_par();
+        par_update_igm();
+
+    //    inspect_par();
     }
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_Finalize();

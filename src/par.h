@@ -1,6 +1,7 @@
 
 typedef uint64_t long_t;
 
+#define float_t myfloat_t
 typedef double float_t;
 
 typedef float_t istate_t[3];
@@ -9,8 +10,10 @@ typedef float_t dstate_t[3];
 typedef struct {
     fckey_t fckey; /* position */
     long_t id; /* for debugging */
-    float_t mass; 
+    float_t mass;
+    float_t rho;
     float_t T;
+    float_t IGMmass;
     istate_t istate;
 } par_t;
 
