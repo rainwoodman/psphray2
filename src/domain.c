@@ -101,6 +101,14 @@ static void find_pov(fckey_t * POV) {
 }
 
 
+/*
+ * decompose the domain.
+ * 1) the input buffer is sorted. (will be freed after this)
+ * 2) find POV points to cut the space filling curve, iteratively
+ * 3) send particles to destinated Task's main buffers.
+ * 4) sort the main buffer
+ * 5) free the input buffer.
+ * */
 void domain_decompose() {
     /* after domain_decompose, PAR is available */
     par_sort_by_fckey(PAR_BUFFER_IN);
@@ -179,6 +187,15 @@ void domain_decompose() {
     par_free(PAR_BUFFER_IN);
 }
 
+/*
+ * Mark nodes that are completely within current Task.
+ * node->complete is set to False if the another Task
+ * overlaps this node.
+ *
+ * This is the last step of the domain decompostion.
+ * called by domain_build_tree();
+ * */
+
 static void domain_mark_complete() {
     fckey_t * before = g_slice_new(fckey_t);
     fckey_t * behind = g_slice_new(fckey_t);
@@ -234,6 +251,22 @@ static void domain_mark_complete() {
     }
 }
 
+/*
+ * Finalize the domain decomposition and build a local tree
+ * for the domain.
+ *
+ * We need to communicate once more to ensure the tree nodes
+ * at the boundary of the domain are not chopped off.
+ *
+ * In the end, the tree nodes that are completely within the
+ * local Task are marked with node->complete == True.
+ *
+ * We build the tree twice, first time is on the original
+ * domain from domain_decompose; but this first tree is temporary,
+ * we then decide which node to migrate to neighbour Tasks, migrate
+ * the particles, and build the tree for the second time. 
+ * The second tree is the real tree.
+ * */
 void domain_build_tree() {
     /* 
      *
