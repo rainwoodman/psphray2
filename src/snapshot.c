@@ -222,17 +222,17 @@ static void cast_to_long_t(char * in, char * out, size_t N, int elsize) {
     }
 
 }
-static void convert_to_fckey_t(char * in, char * out, size_t N, int elsize) {
+static void convert_to_fckey_t(char * in, char * out, size_t N, int elsize, double BoxSize) {
     if(out == NULL) return;
     int64_t ipos[3];
     for(intptr_t i = 0; i < N; i++) {
         if(elsize == 8) {
             for(int d=0; d < 3; d++) {
-                ipos[d] = ((double*)in)[i* 3 + d] / CB.BoxSize * FCKEY_MAX;
+                ipos[d] = ((double*)in)[i* 3 + d] / BoxSize * FCKEY_MAX;
             }
         } else {
             for(int d=0; d < 3; d++) {
-                ipos[d] = ((float*)in)[i* 3 + d] / CB.BoxSize * FCKEY_MAX;
+                ipos[d] = ((float*)in)[i* 3 + d] / BoxSize * FCKEY_MAX;
             }
         }
         fckey_from_ipos(&((fckey_t *)out)[i], ipos);
@@ -279,7 +279,7 @@ static void snapshot_read_one(int fid, SnapHeader * h) {
     p = buffer + 256 + 4 + 4; /* skip header */
 
     /*pos*/
-    convert_to_fckey_t(p + 4, cast, h[0].Ngas, snap_float_elsize);
+    convert_to_fckey_t(p + 4, cast, h[0].Ngas, snap_float_elsize, h[0].BoxSize);
     snapshot_scatter_block(cast, h[0].Ngas, recvbuf, 
         offsetof(par_t, fckey), elsizeof(par_t, fckey));
     p += snap_float_elsize * 3 * Ntot + 4 + 4;
