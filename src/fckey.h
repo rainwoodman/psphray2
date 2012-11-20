@@ -3,7 +3,7 @@ typedef union {
     uint8_t c[16];
 } fckey_t;
 
-#define FCKEY_BITS 16
+#define FCKEY_BITS 20
 #define FCKEY_MAX ((1L << FCKEY_BITS) - 1)
 
 #define FCKEY_FMT "%lX%0.16lX"
@@ -17,5 +17,6 @@ void fckey_center(fckey_t * center, fckey_t * key1, fckey_t * key2);
 void fckey_set_max(fckey_t * key);
 int fckey_is_zero(fckey_t * key);
 void fckey_xor(fckey_t * result, fckey_t * key1, fckey_t * key2);
+void fckey_rightshift(fckey_t * key, int offset);
 
 

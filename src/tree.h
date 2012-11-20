@@ -7,7 +7,7 @@ struct _Node;
     char type; \
     char order; \
     char complete; \
-    char nchildren; \
+    char unused; \
     int32_t npar;  \
     par_t * first; \
     fckey_t key; \
@@ -34,6 +34,17 @@ typedef struct _InnerNode {
     "nc: " "%d " \
     "}"
 
+static inline int tree_node_nchildren(Node * node) {
+    if(node->type == NODE_TYPE_INNER) {
+        int i = 0, p = 0;
+        for(i = 0; i < 8; i++) {
+            p += (((InnerNode*) node)->child[i] != NULL);
+        }
+        return p;
+    } else {
+        return 0;
+    }
+}
 #define NODE_PRINT(x) \
     (x).type, \
     (x).complete?"C":"I", \
@@ -41,13 +52,11 @@ typedef struct _InnerNode {
     (x).order, \
     (int)((x).first - &PAR(0)), \
     (x).npar, \
-    (x).nchildren
+    tree_node_nchildren((Node*)&(x))
 
 typedef struct {
-  Node * stack[128];
-  int8_t c[128];
   Node * root;
-  int top;
+  Node * current;
 } TreeIter;
 
 void tree_build();
@@ -59,10 +68,9 @@ int tree_node_contains_fckey(Node * node, fckey_t * key);
 int tree_node_contains_node(Node * node, Node * needle);
 Node * tree_node_find_image(Node * node, Node * needle);
 
-TreeIter * tree_iter_new(Node * root);
+void tree_iter_init(TreeIter * iter, Node * root);
 Node * tree_iter_next(TreeIter * iter);
 Node * tree_iter_next_sibling(TreeIter * iter);
-void tree_iter_free(TreeIter * iter);
 
 extern Node * TREEROOT;
 

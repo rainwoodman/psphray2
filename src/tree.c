@@ -4,11 +4,21 @@
 #include "commonblock.h"
 
 Node * TREEROOT = NULL;
-int tree_node_contains_fckey(Node * node, fckey_t * key) {
+int tree_node_locate_fckey(Node * node, fckey_t * key) {
+    /* returns -1 if not in the node, otherwise returns
+     * the octrant(0-7) that contains the key */
     fckey_t tmp;
     fckey_xor(&tmp, &node->key, key);
-    fckey_clear(&tmp, 3 * node->order);
-    return fckey_is_zero(&tmp);
+    fckey_rightshift(&tmp, 3 * (node->order - 1));
+    if(tmp.a[1] == 0 && tmp.a[0] < 8) {
+        return tmp.a[0];
+    } else {
+        return -1;
+    }
+}
+
+int tree_node_contains_fckey(Node * node, fckey_t * key) {
+    return tree_node_locate_fckey(node, key) != -1;
 }
 
 int tree_node_contains_node(Node * node, Node * needle) {
@@ -30,26 +40,12 @@ Node * tree_node_find_image(Node * node, Node * needle) {
     return NULL;
 }
 
-Node * tree_detach_subtree(Node * node) {
-    if(node->parent) {
-        int i;
-        for(i = 0; i < node->parent->nchildren; i++) {
-            if(node->parent->child[i] == node) break;
-        }
-        for(i++;i < node->parent->nchildren; i++) {
-            node->parent->child[i-1] = node->parent->child[i];
-            node->parent->child[i] = NULL;
-        }
-        node->parent->nchildren --;
-    }
-    return node;
-}
-
 void tree_link(Node * root, Node ** firstleaf, InnerNode ** firstinner) {
-    TreeIter * iter = tree_iter_new(root);
+    TreeIter iter;
+    tree_iter_init(&iter, root);
     InnerNode * myfirstinner = NULL, * inner = NULL;
     Node * myfirstleaf = NULL, * leaf = NULL;
-    Node * cur = tree_iter_next(iter);
+    Node * cur = tree_iter_next(&iter);
     while(cur) {
         if(cur->type == NODE_TYPE_INNER) {
             if(myfirstinner == NULL) {
@@ -68,9 +64,8 @@ void tree_link(Node * root, Node ** firstleaf, InnerNode ** firstinner) {
             }
             leaf = cur;
         }
-        cur = tree_iter_next(iter);
+        cur = tree_iter_next(&iter);
     }
-    tree_iter_free(iter);
     if(firstinner) *firstinner = myfirstinner;
     if(firstleaf) *firstleaf = myfirstleaf;
 }
@@ -87,18 +82,14 @@ void tree_destroy(Node * root) {
 static InnerNode * node_to_inner(Node * node) {
     InnerNode * rt = (InnerNode *) node;
     if(node->type == NODE_TYPE_LEAF) {
-        rt = g_slice_new(InnerNode);
+        rt = g_slice_new0(InnerNode);
         memcpy(rt, node, sizeof(Node));
-        rt->nchildren = 0;
         rt->type = NODE_TYPE_INNER;
         /* now replace the reference to the node in the parent */
         InnerNode * parent = node->parent;
         if(parent) {
-            for(int i = 0; i < parent->nchildren; i++) {
-                if(parent->child[i] == node) {
-                    parent->child[i] = (Node *)rt;
-                }
-            }
+            int pos = tree_node_locate_fckey((Node*)parent, &rt->key);
+            parent->child[pos] = (Node *)rt;
         }
         g_slice_free(Node, node);
     } else {
@@ -119,12 +110,8 @@ static Node * create_leaf(Node * parent, par_t * first) {
     rt->key = first->fckey;
     fckey_clear(&rt->key, 3 * rt->order);
     rt->parent = (InnerNode*)parent;
-    rt->nchildren= 0;
-    if(rt->parent->nchildren >= 8) {
-        g_error("too many children");
-    }
-    rt->parent->child[rt->parent->nchildren] = rt;
-    rt->parent->nchildren ++;
+    int pos = tree_node_locate_fckey((Node*)rt->parent, &rt->key);
+    rt->parent->child[pos] = rt;
     return rt;
 }
 
@@ -196,71 +183,63 @@ void tree_build() {
 }
 
 Node * tree_locate_fckey(Node * root, fckey_t * key) {
-    TreeIter * iter = tree_iter_new(root);
-    Node * node = tree_iter_next(iter);
+    TreeIter iter;
+    tree_iter_init(&iter, root);
+    Node * node = tree_iter_next(&iter);
     while(node) {
         if(tree_node_contains_fckey(node, key)) {
             if(node->type == NODE_TYPE_LEAF) {
                 break;
             } else {
-                node = tree_iter_next(iter);
+                node = tree_iter_next(&iter);
             }
         }  else {
-            node = tree_iter_next_sibling(iter);
+            node = tree_iter_next_sibling(&iter);
         }
     }
-    tree_iter_free(iter);
     return node;
 }
-TreeIter * tree_iter_new(Node * root) {
-    TreeIter * rt = g_slice_new0(TreeIter);
-    rt->root = root;
-    rt->top = -2;
-    return rt;
+
+void tree_iter_init(TreeIter * iter, Node * root) {
+    iter->root = root;
+    iter->current = NULL;
 }
-void tree_iter_free(TreeIter * iter) {
-    g_slice_free(TreeIter, iter);
-}
+
 static Node * tree_iter_real_next(TreeIter * iter, int skip_children) {
-    #define TOP ((InnerNode*) (iter->stack[iter->top]))
-    #define CTOP iter->c[iter->top]
-    if(iter->top == -2) {
-        iter->top = -1;
-        return iter->root;
-    }
-    if(iter->top == -1) {
-        if (skip_children) return NULL;
-        iter->stack[0] = iter->root;
-        iter->c[0] = 0;
-        iter->top = 0;
-        return TOP->child[CTOP];
-    }
-    Node * current = TOP->child[CTOP];
-    if(skip_children || 
-       current->type == NODE_TYPE_LEAF || 
-       current->nchildren == 0) {
-        /* skip children or there is no children, visit sibling */
-        if(CTOP + 1 < TOP->nchildren) {
-            /* thee is a sibling */
-            CTOP ++;
-            return TOP->child[CTOP];
-        }
-        iter->top --;
-        /* find first parent sibling */
-        while(iter->top >= 0 && 
-            CTOP == TOP->nchildren) {
-            iter->top --;
-        }
-        /* exhausted */
-        if(iter->top < 0) return NULL;
-        return TOP->child[CTOP];
+    if(iter->current == NULL) {
+        iter->current = iter->root;
+        return iter->current;
     } else {
-        /* do the children */
-        CTOP ++;
-        iter->top ++;
-        TOP = (InnerNode *) current;
-        CTOP = 0;
-        return TOP->child[CTOP];
+        if(! skip_children 
+        && iter->current->type == NODE_TYPE_INNER
+        ) {
+            int i = 0;
+            while(i < 8) {
+                if(((InnerNode *) iter->current)->child[i]) {
+                    iter->current = ((InnerNode *) iter->current)->child[i];
+                    //g_message("visiting child");
+                    return iter->current;
+                }
+                i++;
+            }
+        } /* fall through */
+        /* visit sibling */
+        InnerNode * parent = iter->current->parent;
+        while(iter->current != iter->root) {
+            int i = tree_node_locate_fckey((Node *)parent, 
+                & iter->current->key) + 1;
+            while(i < 8) {
+                if(parent->child[i] != NULL) {
+                    iter->current = parent->child[i];
+                    return iter->current;
+                }
+                i++;
+            }
+            iter->current = (Node*) parent;
+            parent = parent->parent;
+        }
+        iter->current = NULL;
+        return NULL;
     }
 }
 Node * tree_iter_next(TreeIter * iter) {

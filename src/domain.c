@@ -66,28 +66,29 @@ static void find_pov(fckey_t * POV) {
         }
         if(_break) break;
         k ++;
-        if(k > 100) {
+        if(k > 500) {
             ROOTONLY g_warning("too many iterations in domain decomposition");
             break;
         }
     }
 
-    for(i = 0; i < NTask ; i++) {
-        g_debug("task %d"
-            #if 0
-               " l " FCKEY_FMT " m " FCKEY_FMT " r " FCKEY_FMT
-            #endif
-               " dsr  %ld " 
-               " real %ld " "\n",
-               i, 
-            #if 0
-               FCKEY_PRINT(POVleft[i]), FCKEY_PRINT(POVmid[i]),
-               FCKEY_PRINT(POVright[i]),
-            #endif
-               cumNtot_desired[i], 
-               cumNtot[i]);
+    ROOTONLY {
+        for(i = 0; i < NTask ; i++) {
+            g_message("task %d"
+                #if 1
+                   " l " FCKEY_FMT " m " FCKEY_FMT " r " FCKEY_FMT
+                #endif
+                   " dsr  %ld " 
+                   " real %ld " "\n",
+                   i, 
+                #if 1
+                   FCKEY_PRINT(POVleft[i]), FCKEY_PRINT(POVmid[i]),
+                   FCKEY_PRINT(POVright[i]),
+                #endif
+                   cumNtot_desired[i], 
+                   cumNtot[i]);
+        }
     }
-
     for(i = 0; i < NTask ; i++) {
         POV[i] = POVmid[i];
     }
@@ -183,23 +184,24 @@ static void domain_mark_complete() {
     fckey_t * behind = g_slice_new(fckey_t);
 
     MPI_Barrier(MPI_COMM_WORLD);
-    MPI_Sendrecv(&PAR(0).fckey, sizeof(fckey_t), MPI_BYTE, PrevTask, 1,
-        behind, sizeof(fckey_t), MPI_BYTE, NextTask, 1,
+    MPI_Sendrecv(&PAR(0).fckey, sizeof(fckey_t), MPI_BYTE, PrevTask, 101,
+        behind, sizeof(fckey_t), MPI_BYTE, NextTask, 101,
         MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     MPI_Barrier(MPI_COMM_WORLD);
 
-    MPI_Sendrecv(&PAR(-1).fckey, sizeof(fckey_t), MPI_BYTE, NextTask, 2,
-        before, sizeof(fckey_t), MPI_BYTE, PrevTask, 2,
+    MPI_Sendrecv(&PAR(-1).fckey, sizeof(fckey_t), MPI_BYTE, NextTask, 102,
+        before, sizeof(fckey_t), MPI_BYTE, PrevTask, 102,
         MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
     MPI_Barrier(MPI_COMM_WORLD);
 
-    TreeIter * iter = tree_iter_new(TREEROOT);
+    TreeIter iter;
+    tree_iter_init(&iter, TREEROOT);
     intptr_t complete_count = 0;
     intptr_t incomplete_count = 0;
-    for(Node * node = tree_iter_next(iter);
+    for(Node * node = tree_iter_next(&iter);
         node;
-        node = tree_iter_next(iter)) {
+        node = tree_iter_next(&iter)) {
         if(ThisTask != 0 && 
             tree_node_contains_fckey(node, before)) {
             node->complete = FALSE;
@@ -223,7 +225,6 @@ static void domain_mark_complete() {
         node->complete = TRUE;
         complete_count ++;
     }
-    tree_iter_free(iter);
     g_slice_free(fckey_t, behind);
     g_slice_free(fckey_t, before);
 
@@ -260,6 +261,8 @@ void domain_build_tree() {
     Node * before = g_slice_new(Node);
     Node * behind = g_slice_new(Node);
 
+    g_message("root" NODE_FMT "", NODE_PRINT(TREEROOT[0]));
+    g_message("first" NODE_FMT "", NODE_PRINT(first[0]));
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_Sendrecv(first, sizeof(Node), MPI_BYTE, PrevTask, 1,
         behind, sizeof(Node), MPI_BYTE, NextTask, 1,

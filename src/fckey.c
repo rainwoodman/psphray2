@@ -19,7 +19,7 @@ static inline void fckey_or_with_leftshift(fckey_t * key, uint32_t value, int t)
     }
 }
 
-static inline void fckey_rightshift(fckey_t * key, int offset) {
+void fckey_rightshift(fckey_t * key, int offset) {
     if(offset == 0) return;
     if(offset < 64) {
         key->a[0] >>= offset;
