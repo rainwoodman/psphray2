@@ -72,9 +72,11 @@ void common_block_bootstrap();
         MPI_Barrier(MPI_COMM_WORLD), __i__++) if(ThisTask == __i__)
 
 
+#include "stack.h"
 #include "fckey.h"
 #include "par.h"
 #include "paramfile.h"
 #include "snapshot.h"
 #include "tree.h"
+#include "domain.h"
 #include "gadget.h"

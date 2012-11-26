@@ -9,9 +9,15 @@ struct _Node;
     char complete; \
     char unused; \
     int32_t npar;  \
-    par_t * first; \
+    union { \
+        par_t * first; \
+        intptr_t ifirst; \
+    }; \
     fckey_t key; \
-    struct _InnerNode * parent; \
+    union { \
+        struct _InnerNode * parent; \
+        intptr_t iparent; \
+    }; \
     struct _Node * link; 
 /* link is used in to free the tree */
 
@@ -21,8 +27,16 @@ typedef struct _Node {
 
 typedef struct _InnerNode {
     NODE_COMMON;
-    Node * child[8];
+    union {
+        Node * child[8];
+        intptr_t ichild[8];
+    };
 } InnerNode;
+
+typedef struct {
+    Stack inner;
+    Stack leaf;
+} TreeStore;
 
 #define NODE_FMT \
     "{ " \
@@ -59,10 +73,11 @@ typedef struct {
   Node * current;
 } TreeIter;
 
-void tree_build();
-#define tree_free() (tree_destroy(TREEROOT), TREEROOT = NULL)
-void tree_destroy(Node * root);
-void tree_link(Node * root, Node ** firstleaf, InnerNode ** firstinner);
+Node * tree_build(TreeStore * store, PSystem * psys);
+
+void tree_store_init(TreeStore * store);
+void tree_store_destroy(TreeStore * store);
+
 Node * tree_locate_fckey(Node * root, fckey_t * key);
 int tree_node_contains_fckey(Node * node, fckey_t * key);
 int tree_node_contains_node(Node * node, Node * needle);
@@ -71,6 +86,4 @@ Node * tree_node_find_image(Node * node, Node * needle);
 void tree_iter_init(TreeIter * iter, Node * root);
 Node * tree_iter_next(TreeIter * iter);
 Node * tree_iter_next_sibling(TreeIter * iter);
-
-extern Node * TREEROOT;
 

@@ -9,7 +9,7 @@ PSystem PAR_MAIN = { "MAIN", 0 };
 static intptr_t searchsorted (void * key, void * array, 
       size_t len, size_t elsize, GCompareFunc compare);
 
-void par_free(PSystem * psys) {
+void par_destroy(PSystem * psys) {
     g_free(psys->base);
     psys->data = NULL;
     psys->size = 0;

@@ -56,7 +56,7 @@ int main(int argc, char * argv[]) {
     MPI_Barrier(MPI_COMM_WORLD);
 
     init_gadget();
-    g_debug("MPI Task: %d of %d, datadir=%s", ThisTask, NTask, CB.datadir);
+    g_message("MPI Task: %d of %d, datadir=%s", ThisTask, NTask, CB.datadir);
     MPI_Barrier(MPI_COMM_WORLD);
 
     for(CB.SnapNumMajor = CB.SnapNumMajorBegin;
@@ -100,7 +100,7 @@ static void inspect_par() {
     }
 }
 void inspect_tree() {
-    TreeIter iter = {TREEROOT, NULL};
+    TreeIter iter = {D.tree, NULL};
     Node * node = tree_iter_next(&iter);
     intptr_t count = 0;
     g_print("%02d tree dump\n", ThisTask);

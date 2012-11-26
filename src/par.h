@@ -26,11 +26,7 @@ typedef struct {
 } PSystem;
 
 extern PSystem PAR_IN;
-extern PSystem PAR_MAIN;
 #define PAR_BUFFER_IN &PAR_IN
-#define PAR_BUFFER_MAIN &PAR_MAIN
-#define NPAR PAR_MAIN.length
-#define PAR(i) (PAR_MAIN.data[((signed)(i)<0)?((i)+NPAR):(i)])
 
 #define PARin(i) (PAR_IN.data[((signed)(i)<0)?((i)+NPARin):(i)])
 #define NPARin PAR_IN.length
@@ -38,8 +34,9 @@ extern PSystem PAR_MAIN;
 void par_reserve(PSystem * psys, size_t size, size_t before);
 par_t * par_append(PSystem * psys, intptr_t add);
 par_t * par_prepend(PSystem * psys, intptr_t add);
-void par_free(PSystem * psys);
+void par_destroy(PSystem * psys);
 void par_sort_by_fckey(PSystem * psys);
 intptr_t par_search_by_fckey(PSystem * psys, fckey_t * key);
 
 #define elsizeof(type, el) sizeof(((type *) 0)->el)
+

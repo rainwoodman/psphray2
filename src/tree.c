@@ -3,7 +3,43 @@
 #include <string.h>
 #include "commonblock.h"
 
-Node * TREEROOT = NULL;
+static Node * tree_store_append(TreeStore * store, int type) {
+    Node * rt;
+    if(type == NODE_TYPE_LEAF) {
+        rt = (Node*) stack_push(&store->leaf, Node);
+    } else {
+        rt = (Node*) stack_push(&store->inner, InnerNode);
+    }
+    rt->type = type;
+    return rt;
+}
+static Node * tree_store_pop(TreeStore * store, Node * node) {
+     if(node->type == NODE_TYPE_LEAF) {
+        if(node == (Node*) stack_peek(&store->leaf, Node)) {
+            return (Node*) stack_pop(&store->leaf, Node);
+        } else {
+            g_critical("trying to pop a non top leaf node");
+            return NULL;
+        }
+    } else {
+        if(node == (Node*) stack_peek(&store->inner, InnerNode)) {
+            return (Node*) stack_pop(&store->inner, InnerNode);
+        } else {
+            g_critical("trying to pop a non top inner node");
+            return NULL;
+        }
+    }
+
+}
+void tree_store_init(TreeStore * store) {
+    stack_init(&store->inner, InnerNode);
+    stack_init(&store->leaf, Node);
+}
+void tree_store_destroy(TreeStore * store) {
+    stack_destroy(&store->leaf);
+    stack_destroy(&store->inner);
+}
+
 int tree_node_locate_fckey(Node * node, fckey_t * key) {
     /* returns -1 if not in the node, otherwise returns
      * the octrant(0-7) that contains the key */
@@ -69,21 +105,11 @@ void tree_link(Node * root, Node ** firstleaf, InnerNode ** firstinner) {
     if(firstinner) *firstinner = myfirstinner;
     if(firstleaf) *firstleaf = myfirstleaf;
 }
-
-void tree_destroy(Node * root) {
-    /* free the entire thing */
-    InnerNode * firstinner = NULL;
-    Node * firstleaf = NULL;
-    tree_link(root, &firstleaf, &firstinner);
-    g_slice_free_chain(InnerNode, firstinner, link);
-    g_slice_free_chain(Node, firstleaf, link);
-}
-
-static InnerNode * node_to_inner(Node * node) {
-    InnerNode * rt = (InnerNode *) node;
+static InnerNode * node_to_inner(TreeStore * store, Node * node) {
     if(node->type == NODE_TYPE_LEAF) {
-        rt = g_slice_new0(InnerNode);
+        InnerNode * rt = (InnerNode*) tree_store_append(store, NODE_TYPE_INNER);
         memcpy(rt, node, sizeof(Node));
+        /* memcpy will overwrite type */
         rt->type = NODE_TYPE_INNER;
         /* now replace the reference to the node in the parent */
         InnerNode * parent = node->parent;
@@ -91,19 +117,18 @@ static InnerNode * node_to_inner(Node * node) {
             int pos = tree_node_locate_fckey((Node*)parent, &rt->key);
             parent->child[pos] = (Node *)rt;
         }
-        g_slice_free(Node, node);
+        tree_store_pop(store, node);
+        return rt;
     } else {
         g_error("already inner");
     }
-    return rt;
 }
 
-static Node * create_leaf(Node * parent, par_t * first) {
-    Node * rt = g_slice_new0(Node);
+static Node * create_leaf(TreeStore * store, Node * parent, par_t * first) {
     if(parent->type == NODE_TYPE_LEAF) {
-        parent = (Node*) node_to_inner(parent);
+        parent = (Node*) node_to_inner(store, parent);
     }
-    rt->type = NODE_TYPE_LEAF;
+    Node * rt = tree_store_append(store, NODE_TYPE_LEAF);
     rt->first = first;
     rt->npar = 0;
     rt->order = parent->order - 1;
@@ -115,7 +140,7 @@ static Node * create_leaf(Node * parent, par_t * first) {
     return rt;
 }
 
-static void tree_build_subtree(Node * subroot, par_t * first, intptr_t npar) {
+static void tree_build_subtree(TreeStore * store, Node * subroot, par_t * first, intptr_t npar) {
     par_t * i = first;
     intptr_t SKIPPED = 0;
     Node * node = (Node*) subroot;
@@ -145,12 +170,12 @@ static void tree_build_subtree(Node * subroot, par_t * first, intptr_t npar) {
         if(node->type == NODE_TYPE_INNER) {
             /* create a child of this inner node
              * particle will be added later */
-            node = create_leaf(node, i);
+            node = create_leaf(store, node, i);
         } else /* must be a leaf node */
         if(node->npar > CB.NodeSplitThresh && node->order > 0) {
             /* split the node */
             i = node->first;
-            node = create_leaf(node, i);
+            node = create_leaf(store, node, i);
         } else {
             /* add particle to the leaf */
             /* code will fall through */
@@ -173,13 +198,13 @@ static void tree_build_subtree(Node * subroot, par_t * first, intptr_t npar) {
     }
 }
 
-void tree_build() {
+Node * tree_build(TreeStore * store, PSystem * psys) {
     /* first make the root */
-    TREEROOT = (Node *) g_slice_new0(InnerNode);
-    TREEROOT->order = FCKEY_BITS;
-    TREEROOT->type = NODE_TYPE_INNER;
-    TREEROOT->first = &PAR(0);
-    tree_build_subtree(TREEROOT, &PAR(0), NPAR);
+    Node * root = (Node *) tree_store_append(store, NODE_TYPE_INNER);
+    root->order = FCKEY_BITS;
+    root->first = &psys->data[0];
+    tree_build_subtree(store, root, &psys->data[0], psys->length);
+    return root;
 }
 
 Node * tree_locate_fckey(Node * root, fckey_t * key) {
