@@ -4,7 +4,6 @@
 #include "commonblock.h"
 
 PSystem PAR_IN = { "INPUT", 0 };
-PSystem PAR_MAIN = { "MAIN", 0 };
 
 static intptr_t searchsorted (void * key, void * array, 
       size_t len, size_t elsize, GCompareFunc compare);

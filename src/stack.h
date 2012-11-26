@@ -33,6 +33,8 @@ static void * stack_push1(Stack * stack) {
         stack->data = g_realloc(stack->data, stack->size * stack->elsize);
     }
     void * rt = (void*)(((char*)stack->data) + (stack->len ++) * stack->elsize);
+    /* shut up the compiler. we do not want string.h */
+    void * memset(void*, int, size_t);
     memset(rt, 0, stack->elsize);
     return rt;
 }

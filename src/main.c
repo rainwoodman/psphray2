@@ -5,6 +5,8 @@
 
 void abort() {
     MPI_Abort(MPI_COMM_WORLD, 1);
+    /* shut up the compiler */
+    exit(1);
 }
 
 static char ** paramfilename = NULL;
@@ -81,7 +83,7 @@ int main(int argc, char * argv[]) {
     return 0;
 }
 
-static void inspect_par() {
+void inspect_par() {
     for(intptr_t i = 0; NPAR && i < NPAR - 1; i++) {
         if(!fckey_cmp(&PAR(i).fckey, &PAR(i + 1).fckey) < 0) {
             g_warning("%02d par unordered %ld and %ld " 
