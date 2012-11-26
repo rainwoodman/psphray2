@@ -14,11 +14,11 @@ void bcast_string(char ** string) {
         len = strlen(string[0]);
     }
 
-    MPI_Bcast(&len, sizeof(len), MPI_BYTE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&len, 1, MPI_INT, 0, MPI_COMM_WORLD);
     ROOTONLY { } else {
         string[0] = g_new(char, len + 1);
     }
-    MPI_Bcast(string[0], len, MPI_BYTE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(string[0], len + 1, MPI_BYTE, 0, MPI_COMM_WORLD);
 }
 
 void common_block_bootstrap() {
