@@ -43,7 +43,7 @@ typedef struct {
     "%c%s " \
     FCKEY_FMT "/"\
     "%d " \
-    "fst: " "%d " \
+    "fst: " "%p " \
     "np: " "%d " \
     "nc: " "%d " \
     "}"
@@ -64,7 +64,7 @@ static inline int tree_node_nchildren(Node * node) {
     (x).complete?"C":"I", \
     FCKEY_PRINT((x).key), \
     (x).order, \
-    (int)((x).first - &PAR(0)), \
+    (x).first, \
     (x).npar, \
     tree_node_nchildren((Node*)&(x))
 

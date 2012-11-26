@@ -3,8 +3,6 @@
 
 #include "commonblock.h"
 
-Domain D;
-
 static void cumbincount(fckey_t * POV, intptr_t * N) {
     for(int i = 0; i < NTask - 1; i++) {
         N[i] = par_search_by_fckey(PAR_BUFFER_IN, &POV[i]);
@@ -104,14 +102,14 @@ static void find_pov(fckey_t * POV) {
 
 
 /*
- * decompose the domain.
+ * decompose the domain->
  * 1) the input buffer is sorted. (will be freed after this)
  * 2) find POV points to cut the space filling curve, iteratively
  * 3) send particles to destinated Task's main buffers.
  * 4) sort the main buffer
  * 5) free the input buffer.
  * */
-void domain_decompose() {
+void domain_decompose(Domain * domain) {
     /* after domain_decompose, PAR is available */
     par_sort_by_fckey(PAR_BUFFER_IN);
     fckey_t * POV = g_new0(fckey_t, NTask);
@@ -135,8 +133,8 @@ void domain_decompose() {
 
     /* so we have a few slots before and after, 
      * to adjusted domain boundaries against the tree */
-    par_reserve(&D.psys, total - before, before);
-    D.psys.length = segN[ThisTask];
+    par_reserve(&domain->psys, total - before, before);
+    domain->psys.length = segN[ThisTask];
 
 
     ROOTONLY {
@@ -174,7 +172,7 @@ void domain_decompose() {
     MPI_Type_commit(&partype);
 
     MPI_Alltoallv(&PARin(0), sendcounts, sdispls, partype,
-                &PAR(0), recvcounts, rdispls, partype,
+                domain->psys.data, recvcounts, rdispls, partype,
                 MPI_COMM_WORLD);
 
     MPI_Type_free(&partype);
@@ -185,7 +183,7 @@ void domain_decompose() {
     g_free(segN);
     g_free(POV);
 
-    par_sort_by_fckey(&D.psys);
+    par_sort_by_fckey(&domain->psys);
     par_destroy(PAR_BUFFER_IN);
 }
 
@@ -198,24 +196,24 @@ void domain_decompose() {
  * called by domain_build_tree();
  * */
 
-static void domain_mark_complete() {
+static void domain_mark_complete(Domain * domain) {
     fckey_t * before = g_slice_new(fckey_t);
     fckey_t * behind = g_slice_new(fckey_t);
 
     MPI_Barrier(MPI_COMM_WORLD);
-    MPI_Sendrecv(&PAR(0).fckey, sizeof(fckey_t), MPI_BYTE, PrevTask, 101,
+    MPI_Sendrecv(&PAR(domain, 0).fckey, sizeof(fckey_t), MPI_BYTE, PrevTask, 101,
         behind, sizeof(fckey_t), MPI_BYTE, NextTask, 101,
         MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     MPI_Barrier(MPI_COMM_WORLD);
 
-    MPI_Sendrecv(&PAR(-1).fckey, sizeof(fckey_t), MPI_BYTE, NextTask, 102,
+    MPI_Sendrecv(&PAR(domain, -1).fckey, sizeof(fckey_t), MPI_BYTE, NextTask, 102,
         before, sizeof(fckey_t), MPI_BYTE, PrevTask, 102,
         MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
     MPI_Barrier(MPI_COMM_WORLD);
 
     TreeIter iter;
-    tree_iter_init(&iter, D.tree);
+    tree_iter_init(&iter, domain->tree);
     intptr_t complete_count = 0;
     intptr_t incomplete_count = 0;
     for(Node * node = tree_iter_next(&iter);
@@ -255,7 +253,7 @@ static void domain_mark_complete() {
 
 /*
  * Finalize the domain decomposition and build a local tree
- * for the domain.
+ * for the domain->
  *
  * We need to communicate once more to ensure the tree nodes
  * at the boundary of the domain are not chopped off.
@@ -269,7 +267,7 @@ static void domain_mark_complete() {
  * the particles, and build the tree for the second time. 
  * The second tree is the real tree.
  * */
-void domain_build_tree() {
+void domain_build_tree(Domain * domain) {
     /* 
      *
      * adjust the domain boundary to build a tree, 
@@ -289,16 +287,16 @@ void domain_build_tree() {
      *      the shorter one.
      *  */
 
-    tree_store_init(&D.treestore);
-    D.tree = tree_build(&D.treestore, &D.psys);
+    tree_store_init(&domain->treestore);
+    domain->tree = tree_build(&domain->treestore, &domain->psys);
 
-    Node * first = tree_locate_fckey(D.tree, &PAR(0).fckey);
-    Node * last = tree_locate_fckey(D.tree, &PAR(-1).fckey);
+    Node * first = tree_locate_fckey(domain->tree, &PAR(domain, 0).fckey);
+    Node * last = tree_locate_fckey(domain->tree, &PAR(domain, -1).fckey);
     Node * before = g_slice_new(Node);
     Node * behind = g_slice_new(Node);
 
-    g_message("root" NODE_FMT "", NODE_PRINT(D.tree[0]));
-    g_message("first" NODE_FMT "", NODE_PRINT(D.tree[0]));
+    g_message("root" NODE_FMT "", NODE_PRINT(domain->tree[0]));
+    g_message("first" NODE_FMT "", NODE_PRINT(domain->tree[0]));
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_Sendrecv(first, sizeof(Node), MPI_BYTE, PrevTask, 1,
         behind, sizeof(Node), MPI_BYTE, NextTask, 1,
@@ -345,14 +343,14 @@ void domain_build_tree() {
         if(last->npar < behind->npar) {
             /* send */
             tail_sendcount = last->npar;
-            par_t * sendbuf = par_append(&D.psys, -tail_sendcount);
+            par_t * sendbuf = par_append(&domain->psys, -tail_sendcount);
             MPI_Isend(sendbuf, tail_sendcount, partype,
                 NextTask, 6,
                 MPI_COMM_WORLD, &tail_req);
         } else {
             /* recv */ 
             tail_recvcount = behind->npar;
-            par_t * recvbuf = par_append(&D.psys, tail_recvcount);
+            par_t * recvbuf = par_append(&domain->psys, tail_recvcount);
             MPI_Irecv(recvbuf, tail_recvcount, partype, 
                 NextTask, 7, 
                 MPI_COMM_WORLD, &tail_req);
@@ -362,14 +360,14 @@ void domain_build_tree() {
         if(first->npar > before->npar) {
             /* recv */
             head_recvcount = before->npar;
-            par_t * recvbuf = par_prepend(&D.psys, head_recvcount);
+            par_t * recvbuf = par_prepend(&domain->psys, head_recvcount);
             MPI_Irecv(recvbuf, head_recvcount, partype, 
                 PrevTask, 6,
                 MPI_COMM_WORLD, &head_req);
         } else {
             /* send */
             head_sendcount = first->npar;
-            par_t * sendbuf = par_prepend(&D.psys, -head_sendcount);
+            par_t * sendbuf = par_prepend(&domain->psys, -head_sendcount);
             MPI_Isend(sendbuf, head_sendcount, partype, 
                 PrevTask, 7,
                 MPI_COMM_WORLD, &head_req);
@@ -408,8 +406,14 @@ void domain_build_tree() {
     g_slice_free(Node, before);
     g_slice_free(Node, behind);
 
-    tree_store_destroy(&D.treestore);
-    tree_store_init(&D.treestore);
-    D.tree = tree_build(&D.treestore, &D.psys);
-    domain_mark_complete();
+    tree_store_destroy(&domain->treestore);
+    tree_store_init(&domain->treestore);
+    domain->tree = tree_build(&domain->treestore, &domain->psys);
+    domain_mark_complete(domain);
+}
+
+void domain_destroy(Domain * domain) {
+    par_destroy(&domain->psys);
+    tree_store_destroy(&domain->treestore);
+    domain->tree = NULL;
 }

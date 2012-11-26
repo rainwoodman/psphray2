@@ -73,10 +73,8 @@ par_t * par_prepend(PSystem * psys, intptr_t add) {
     else return psys->data + add;
 }
 
-void par_update_igm() {
-    for(intptr_t i = 0; i < NPAR; i++) {
-        PAR(i).IGMmass = PAR(i).mass * (1.0 - get_cloud_fraction(PAR(i).rho * (CB.a * CB.a * CB.a)));
-    }
+void par_update_igm(par_t * i) {
+    i->IGMmass = i->mass * (1.0 - get_cloud_fraction(i->rho * (CB.a * CB.a * CB.a)));
 }
 
 static intptr_t searchsorted (void * target, void * array, 

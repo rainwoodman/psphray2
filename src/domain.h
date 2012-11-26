@@ -5,7 +5,8 @@ typedef struct {
     int HostTask;
 } Domain;
 
-void domain_decompose();
-extern Domain D;
-#define PAR(i) (D.psys.data[((signed)(i)<0)?((i)+D.psys.length):(i)])
-#define NPAR  D.psys.length
+void domain_decompose(Domain * domain);
+void domain_build_tree(Domain * domain);
+void domain_destroy(Domain * domain);
+#define PAR(d, i) (d->psys.data[((signed)(i)<0)?((i)+d->psys.length):(i)])
+#define NPAR(d)  d->psys.length

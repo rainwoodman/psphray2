@@ -13,6 +13,7 @@ SOURCES = \
     snapshot.c \
 	domain.c \
 	tree.c \
+	inspect.c \
 	$(GADGETSOURCES)
 
 HEADERS =
