@@ -17,9 +17,7 @@ struct _Node;
     union { \
         struct _InnerNode * parent; \
         intptr_t iparent; \
-    }; \
-    struct _Node * link; 
-/* link is used in to free the tree */
+    };
 
 typedef struct _Node {
     NODE_COMMON;
