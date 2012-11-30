@@ -76,35 +76,6 @@ Node * tree_node_find_image(Node * node, Node * needle) {
     return NULL;
 }
 
-void tree_link(Node * root, Node ** firstleaf, InnerNode ** firstinner) {
-    TreeIter iter;
-    tree_iter_init(&iter, root);
-    InnerNode * myfirstinner = NULL, * inner = NULL;
-    Node * myfirstleaf = NULL, * leaf = NULL;
-    Node * cur = tree_iter_next(&iter);
-    while(cur) {
-        if(cur->type == NODE_TYPE_INNER) {
-            if(myfirstinner == NULL) {
-                myfirstinner = (InnerNode*)cur;
-            }
-            if(inner != NULL) {
-                inner->link = cur;
-            }
-            inner = (InnerNode*)cur;
-        } else {
-            if(myfirstleaf == NULL) {
-                myfirstleaf = cur;
-            }
-            if(leaf != NULL) {
-                leaf->link = cur;
-            }
-            leaf = cur;
-        }
-        cur = tree_iter_next(&iter);
-    }
-    if(firstinner) *firstinner = myfirstinner;
-    if(firstleaf) *firstleaf = myfirstleaf;
-}
 static InnerNode * node_to_inner(TreeStore * store, Node * node) {
     if(node->type == NODE_TYPE_LEAF) {
         InnerNode * rt = (InnerNode*) tree_store_append(store, NODE_TYPE_INNER);
