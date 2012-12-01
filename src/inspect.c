@@ -2,26 +2,26 @@
 #include <mpi.h>
 
 #include "commonblock.h"
-void inspect_par(Domain * D) {
-    for(intptr_t i = 0; NPAR(D) && i < NPAR(D) - 1; i++) {
-        if(!fckey_cmp(&PAR(D, i).fckey, &PAR(D, i + 1).fckey) < 0) {
+void inspect_par(int color) {
+    for(intptr_t i = 0; NPAR(color) && i < NPAR(color) - 1; i++) {
+        if(!fckey_cmp(&PAR(color, i).fckey, &PAR(color, i + 1).fckey) < 0) {
             g_warning("%02d par unordered %ld and %ld " 
              FCKEY_FMT ", " FCKEY_FMT, 
              ThisTask, i, i+1,
-            FCKEY_PRINT(PAR(D, i).fckey), FCKEY_PRINT(PAR(D, i+1).fckey));
+            FCKEY_PRINT(PAR(color, i).fckey), FCKEY_PRINT(PAR(color, i+1).fckey));
         }
     }
     TAKETURNS {
-            g_print("%02d local Par(%ld): ID = %ld - %ld, "
+            g_print("%02d %02d local Par(%ld): ID = %ld - %ld, "
               "KEY = " FCKEY_FMT " - " FCKEY_FMT "\n", 
-              ThisTask, 
-              NPAR(D), PAR(D, 0).id, PAR(D, -1).id,
-              FCKEY_PRINT(PAR(D, 0).fckey), FCKEY_PRINT(PAR(D, -1).fckey));
+              ThisTask, color,
+              NPAR(color), PAR(color, 0).id, PAR(color, -1).id,
+              FCKEY_PRINT(PAR(color, 0).fckey), FCKEY_PRINT(PAR(color, -1).fckey));
 //              inspect_tree();
     }
 }
-void inspect_tree(Domain * D) {
-    TreeIter iter = {D->tree, NULL};
+void inspect_tree(int color) {
+    TreeIter iter = {D[color].tree, NULL};
     Node * node = tree_iter_next(&iter);
     intptr_t count = 0;
     g_print("%02d tree dump\n", ThisTask);

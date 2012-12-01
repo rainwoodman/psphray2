@@ -3,11 +3,18 @@ typedef union {
     uint8_t c[16];
 } fckey_t;
 
-#define FCKEY_BITS 20
+extern int FCKEY_BITS;
 #define FCKEY_MAX ((1L << FCKEY_BITS) - 1)
 
-#define FCKEY_FMT "%lX%0.16lX"
-#define FCKEY_PRINT(x) x.a[1], x.a[0]
+#define FCKEY_FMT "%0.*lo%0.*lo%0.*lo"
+#define FCKEY_PRINT_PREFIX(x, n) \
+_fckey_print_width(x, 2, n), _fckey_print_value(x, 2, FCKEY_BITS - (n)), \
+_fckey_print_width(x, 1, n), _fckey_print_value(x, 1, FCKEY_BITS - (n)), \
+_fckey_print_width(x, 0, n), _fckey_print_value(x, 0, FCKEY_BITS - (n))
+#define FCKEY_PRINT(x) FCKEY_PRINT_PREFIX(x, FCKEY_BITS)
+
+uint64_t _fckey_print_value(fckey_t key, int part, int rightshiftdigits);
+int _fckey_print_width(fckey_t key, int part, int digits);
 
 int fckey_cmp(fckey_t * key1, fckey_t * key2);
 void fckey_clear(fckey_t * key, int bits);

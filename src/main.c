@@ -61,22 +61,19 @@ int main(int argc, char * argv[]) {
     g_message("MPI Task: %d of %d, datadir=%s", ThisTask, NTask, CB.datadir);
     MPI_Barrier(MPI_COMM_WORLD);
 
+    domain_init();
+
     for(CB.SnapNumMajor = CB.SnapNumMajorBegin;
         CB.SnapNumMajor < CB.SnapNumMajorEnd;
         CB.SnapNumMajor ++) {
         SnapHeader h;
-        Domain D = {0};
         snapshot_read(&h);
         CB.a = h.a;
 
-        domain_decompose(&D);
-        inspect_par(&D);
-
-        domain_build_tree(&D);
+        domain_decompose();
+        domain_build_tree();
 
         par_update_igm();
-        inspect_par(&D);
-        domain_destroy(&D);
     }
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_Finalize();

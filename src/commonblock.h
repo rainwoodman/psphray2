@@ -15,7 +15,7 @@ typedef struct {
     double MemAllocFactor;
 
     int NodeSplitThresh;
-
+    int SubDomainsPerTask;
     /* do not forget to add the bcast call to common_block_sync() */
     char * datadir;
     char * inputbase;
@@ -68,7 +68,7 @@ void common_block_bootstrap();
 
 #define ROOTONLY if(ThisTask == 0)
 #define TAKETURNS \
-    for(int __i__ = 0; __i__ < NTask; \
+    for(int __i__ = 0; MPI_Barrier(MPI_COMM_WORLD), __i__ < NTask; \
         MPI_Barrier(MPI_COMM_WORLD), __i__++) if(ThisTask == __i__)
 
 

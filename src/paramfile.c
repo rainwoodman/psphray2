@@ -79,6 +79,7 @@ static void SECTION_IO() {
 static void SECTION_DOMAIN() {
     ddouble("Domain", "MemImbalanceTol", &CB.MemImbalanceTol, 0.05);
     ddouble("Domain", "MemAllocFactor", &CB.MemAllocFactor, 2.0);
+    dinteger("Domain", "SubDomainsPerTask", &CB.SubDomainsPerTask, 4);
 }
 
 static void SECTION_TREE() {

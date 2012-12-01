@@ -1,52 +1,58 @@
 #include <glib.h>
 #include <mpi.h>
 
+#include <string.h>
 #include "commonblock.h"
+Domain * D = NULL;
+int NDomain = 0;
+int NColor = 0;
+DomainTable * DOMAINTABLE = NULL;
 
 static void cumbincount(fckey_t * POV, intptr_t * N) {
-    for(int i = 0; i < NTask - 1; i++) {
+    for(int i = 0; i < NDomain - 1; i++) {
         N[i] = par_search_by_fckey(PAR_BUFFER_IN, &POV[i]);
     }
-    N[NTask - 1] = NPARin;
-    MPI_Allreduce(MPI_IN_PLACE, N, NTask, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
+    N[NDomain - 1] = NPARin;
+    MPI_Allreduce(MPI_IN_PLACE, N, NDomain, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
 }
 static void bincount_local(fckey_t * POV, intptr_t * N) {
-    for(int i = 0; i < NTask - 1; i++) {
+    for(int i = 0; i < NDomain - 1; i++) {
         N[i] = par_search_by_fckey(PAR_BUFFER_IN, &POV[i]);
     }
-    N[NTask - 1] = NPARin;
-    for(int i = NTask - 1; i > 0; i--) {
+    N[NDomain - 1] = NPARin;
+    for(int i = NDomain - 1; i > 0; i--) {
         N[i] = N[i] - N[i - 1];
     }
 }
+/* POV will chop off the filling curve almost evenly */
 static void find_pov(fckey_t * POV) {
     int i;
-    fckey_t * POVleft =  g_new0(fckey_t, NTask);
-    fckey_t * POVright = g_new0(fckey_t, NTask);
-    fckey_t * POVmid = g_new0(fckey_t, NTask);
+    fckey_t * POVleft =  g_new0(fckey_t, NDomain);
+    fckey_t * POVright = g_new0(fckey_t, NDomain);
+    fckey_t * POVmid = g_new0(fckey_t, NDomain);
 
-    for(i = 0; i < NTask; i++) {
+    for(i = 0; i < NDomain; i++) {
         fckey_set_max(&POVright[i]);
         fckey_set_max(&POVmid[i]);
     }
-    intptr_t * cumNtot_desired = g_new0(intptr_t, NTask);
-    intptr_t * cumNtot = g_new0(intptr_t, NTask);
+    intptr_t * cumNtot_desired = g_new0(intptr_t, NDomain);
+    intptr_t * cumNtot = g_new0(intptr_t, NDomain);
 
     intptr_t Ntot;
     MPI_Allreduce(&NPARin, &Ntot, 1, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
 
-    for(i = 0; i < NTask; i++) {
-        cumNtot_desired[i] = (i + 1)* Ntot / NTask;
+    for(i = 0; i < NDomain; i++) {
+        cumNtot_desired[i] = (i + 1)* Ntot / NDomain;
     }
 
-    intptr_t tol = Ntot / NTask * CB.MemImbalanceTol;
+    intptr_t tol = Ntot / NDomain * CB.MemImbalanceTol;
     int k = 0;
     while(-1) {
-        for(i = 0; i < NTask -1; i++) {
+        for(i = 0; i < NDomain -1; i++) {
             fckey_center(&POVmid[i], &POVleft[i], &POVright[i]);
         }
         cumbincount(POVmid, cumNtot);
-        for(i = 0; i < NTask; i++) {
+        for(i = 0; i < NDomain; i++) {
             if(cumNtot[i] < cumNtot_desired[i] - tol) {
                 POVleft[i] = POVmid[i];
                 continue;
@@ -59,7 +65,7 @@ static void find_pov(fckey_t * POV) {
             POVright[i] = POVmid[i];
         }
         int _break = TRUE;
-        for(i = 0; i < NTask; i++) {
+        for(i = 0; i < NDomain; i++) {
             if(fckey_cmp(&POVleft[i], &POVright[i])) {
                 _break = FALSE;
             }
@@ -73,8 +79,8 @@ static void find_pov(fckey_t * POV) {
     }
 
     ROOTONLY {
-        for(i = 0; i < NTask ; i++) {
-            g_message("task %d"
+        for(i = 0; i < NDomain; i++) {
+            g_debug("domain %d"
                 #if 1
                    " l " FCKEY_FMT " m " FCKEY_FMT " r " FCKEY_FMT
                 #endif
@@ -89,7 +95,7 @@ static void find_pov(fckey_t * POV) {
                    cumNtot[i]);
         }
     }
-    for(i = 0; i < NTask ; i++) {
+    for(i = 0; i < NDomain; i++) {
         POV[i] = POVmid[i];
     }
 
@@ -100,7 +106,109 @@ static void find_pov(fckey_t * POV) {
     g_free(POVmid);
 }
 
+/*
+ * exchange items cross boundary, assuming
+ * the initial ring topology of the domains
+ * set up by domain_init.
+ * */
+static void exchange_cross_boundary(int elsize, void * first, void * last, void * before, void * behind) {
+    MPI_Datatype item_type;
+    MPI_Type_contiguous(elsize, MPI_BYTE, &item_type);
+    MPI_Type_commit(&item_type);
 
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    ROOTONLY {
+        /* shift the first nodes before sending 
+         * why? because  (assume two task and two colors)
+         *
+         * color  Task 0      Task 1
+         *  0      0            1
+         *  1      2            3
+         *  2      4            5
+         *   first(0,1)=2 -> 1=behind(1,0)
+         *   first(0,2)=4 -> 3=behind(1,1)
+         *   first(0,0)=0 -> 5=behind(1,2)
+         * */
+        void * temp = g_malloc0(elsize * NColor);
+        memcpy(temp, (char*) first + elsize, elsize * (NColor - 1));
+        memcpy((char*) temp + elsize * (NColor - 1), first, elsize);
+        first = temp;
+        /* free it later */
+    }
+
+    MPI_Sendrecv(first, NColor, item_type, PrevTask, 1,
+        behind, NColor, item_type, NextTask, 1,
+        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+    ROOTONLY {
+        /* because on root first array sent is a temporary storage
+         * of the shifted */
+        g_free(first);
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    MPI_Sendrecv(last, NColor, item_type, NextTask, 2,
+        before, NColor, item_type, PrevTask, 2,
+        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+    ROOTONLY {
+        /* shift the before nodes after receiving 
+         * why? because  (assume two task and three colors)
+         *
+         * color  Task 0      Task 1
+         *  0      0            1
+         *  1      2            3
+         *  2      4            5
+         *   last(1, 2)=5 -> 0=before(0,0)
+         *   last(1, 0)=1 -> 2=before(0,1)
+         *   last(1, 1)=3 -> 4=before(0,2)
+         * */
+        void * temp = g_memdup(before, elsize * NColor);
+        memcpy((char*) before + elsize, temp, elsize * (NColor - 1));
+        memcpy(before, (char*) temp + elsize * (NColor - 1), elsize);
+        g_free(temp);
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Type_free(&item_type);
+}
+
+
+void domain_init() {
+    NColor = CB.SubDomainsPerTask;
+    D = g_new0(Domain, NColor);
+    NDomain = NColor * NTask;
+    DOMAINTABLE = g_new0(DomainTable, NColor * NTask);
+    for(int i = 0; i < NTask; i++) {
+        for(int color = 0; color < NColor; color++) {
+            DOMAINTABLE[color * NTask + i].HostTask = i;
+            DOMAINTABLE[color * NTask + i].Color = color;
+            if(i == ThisTask) {
+                D[color].index = color * NTask + i;
+                D[color].prev = (color * NTask + i - 1 + NDomain) % NDomain;
+                D[color].next = (color * NTask + i + 1) % NDomain;
+            }
+        }
+    }
+    #if 0
+    /* Test exchange_cross_boundary */
+    int * first = g_new0(int, NColor);
+    int * last = g_new0(int, NColor);
+    int * before = g_new0(int, NColor);
+    int * behind = g_new0(int, NColor);
+    for(int color = 0; color < NColor; color++) {
+        first[color] = color;
+        last[color] = color;
+    }
+    exchange_cross_boundary(sizeof(int), first, last, before, behind);
+    for(int color = 0; color < NColor; color++) {
+        g_print("color %d before %d, behind %d\n",
+            color, before[color], behind[color]);
+    }
+    #endif
+}
 /*
  * decompose the domain->
  * 1) the input buffer is sorted. (will be freed after this)
@@ -108,83 +216,112 @@ static void find_pov(fckey_t * POV) {
  * 3) send particles to destinated Task's main buffers.
  * 4) sort the main buffer
  * 5) free the input buffer.
+ * 6) adjust the domain boundary
+ * 7) build the tree
  * */
-void domain_decompose(Domain * domain) {
+void domain_decompose() {
     /* after domain_decompose, PAR is available */
     par_sort_by_fckey(PAR_BUFFER_IN);
-    fckey_t * POV = g_new0(fckey_t, NTask);
-    intptr_t * segN = g_new0(intptr_t, NTask);
-    intptr_t * N = g_new0(intptr_t, NTask);
+    fckey_t * POV = g_new0(fckey_t, NDomain);
+    intptr_t * N = g_new0(intptr_t, NDomain); /* particles per domain per task*/
+    intptr_t * segN = g_new0(intptr_t, NDomain); /* particles per domain */
 
     find_pov(POV);
 
-    bincount_local(POV, N);
-
-    MPI_Allreduce(N, segN, NTask, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
-
+    /* allocate space for domains hosted locally */
     intptr_t Ntot;
+    bincount_local(POV, N);
+    MPI_Allreduce(N, segN, NDomain, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
 
-    for(int i = 0; i < NTask; i++) {
-        Ntot += segN[i];
+    for(int i = 0; i < NDomain; i++) { Ntot += segN[i]; }
+
+    for(int i = 0; i < NDomain; i++) {
+        if(DOMAINTABLE[i].HostTask != ThisTask) continue;
+        /* so we have a few slots before and after, 
+         * to adjusted domain boundaries against the tree */
+        int color = DOMAINTABLE[i].Color;
+        intptr_t total = Ntot * CB.MemAllocFactor / NDomain;
+        intptr_t before = (total - segN[i]) / 2;
+        par_reserve(&D[color].psys, total - before, before);
+        D[color].psys.length = segN[i];
     }
 
-    intptr_t total = Ntot * CB.MemAllocFactor / NTask;
-    intptr_t before = (total - segN[ThisTask]) / 2;
 
-    /* so we have a few slots before and after, 
-     * to adjusted domain boundaries against the tree */
-    par_reserve(&domain->psys, total - before, before);
-    domain->psys.length = segN[ThisTask];
-
-
+    /* report the load per task */
     ROOTONLY {
-        intptr_t segNmax=segN[0], segNmin=segN[0];
+        /* no need to communicate as root has it all */
+        intptr_t segNmax=-1, segNmin=-1;
         for(int i = 0; i < NTask; i++) {
-            segNmax = MAX(segNmax, segN[i]);
-            segNmin = MIN(segNmax, segN[i]);
+            intptr_t seg = 0;
+            for(int color = 0; color < NColor; color++) {
+                seg += segN[i + color * NTask];
+            }
+            segNmax = MAX(segNmax, seg);
+            segNmin = segNmin==-1?seg:MIN(segNmin, seg);
         }
         g_message("max load %ld, min load %ld", segNmax, segNmin);
     }
 
     /* now lets decide the communication layout */
     
-    int *sendcounts = g_new0(int, NTask);
-    int *sdispls = g_new0(int, NTask);
-    int *recvcounts = g_new0(int, NTask);
-    int *rdispls = g_new0(int, NTask);
+    int *sendcounts = g_new0(int, NDomain);
+    int *sdispls = g_new0(int, NDomain);
 
-    for(int i = 0; i < NTask; i++) {
+    /* how many from this Task will be sent to a domain,
+     * and the offset */
+    for(int i = 0; i < NDomain; i++) {
         sendcounts[i] = N[i];
-    }
-
-    MPI_Alltoall(sendcounts, 1, MPI_INT,
-                 recvcounts, 1, MPI_INT,
-                      MPI_COMM_WORLD);
-
-    for(int i = 0; i < NTask; i++) {
         sdispls[i] = (i>0)?(sdispls[i-1] + sendcounts[i-1]):0;
-        rdispls[i] = (i>0)?(rdispls[i-1] + recvcounts[i-1]):0;
     }
-
 
     MPI_Datatype partype = 0;
     MPI_Type_contiguous(sizeof(par_t), MPI_BYTE, &partype);
     MPI_Type_commit(&partype);
 
-    MPI_Alltoallv(&PARin(0), sendcounts, sdispls, partype,
-                domain->psys.data, recvcounts, rdispls, partype,
-                MPI_COMM_WORLD);
+    /* sendcounts, recvcounts, sdispls rdispls are per domain, 
+     * MPI communicate is done per Task. so we need to be clever.
+     * 
+     * The initial domain decomposition, each task contains SubDomainsPerTask
+     * domains, and it is arranged in this way:
+     * color 0: Task 0, 1, ....... NTask;
+     * color 1: Task 0, 1, ....... NTask;
+     * ......
+     *
+     * Thus we do MPI_Alltoall for each color.
+     *
+     * */
+    for(int color = 0; color < NColor; color++) {
+        int *recvcounts = g_new0(int, NTask);
+        int *rdispls = g_new0(int, NTask);
 
+        MPI_Alltoall(&sendcounts[color * NTask], 1, MPI_INT,
+                 recvcounts, 1, MPI_INT, MPI_COMM_WORLD);
+
+        for(int i = 0; i < NTask; i++) {
+            rdispls[i] = (i>0)?(rdispls[i-1] + recvcounts[i-1]):0;
+        }
+
+        MPI_Alltoallv(&PARin(0), &sendcounts[color * NTask], 
+                    &sdispls[color * NTask], partype,
+                    D[color].psys.data, recvcounts, 
+                    rdispls, partype,
+                    MPI_COMM_WORLD);
+
+
+        g_free(rdispls);
+        g_free(recvcounts);
+    }
     MPI_Type_free(&partype);
-    g_free(rdispls);
-    g_free(recvcounts);
     g_free(sdispls);
     g_free(sendcounts);
     g_free(segN);
     g_free(POV);
-
-    par_sort_by_fckey(&domain->psys);
     par_destroy(PAR_BUFFER_IN);
+
+    for(int color=0; color < NColor; color++) {
+        par_sort_by_fckey(&D[color].psys);
+        inspect_par(color);
+    }
 }
 
 /*
@@ -196,59 +333,169 @@ void domain_decompose(Domain * domain) {
  * called by domain_build_tree();
  * */
 
-static void domain_mark_complete(Domain * domain) {
-    fckey_t * before = g_slice_new(fckey_t);
-    fckey_t * behind = g_slice_new(fckey_t);
+static void mark_complete() {
+    fckey_t * first = g_new0(fckey_t, NColor);
+    fckey_t * last = g_new0(fckey_t, NColor);
+    fckey_t * before = g_new0(fckey_t, NColor);
+    fckey_t * behind = g_new0(fckey_t, NColor);
 
-    MPI_Barrier(MPI_COMM_WORLD);
-    MPI_Sendrecv(&PAR(domain, 0).fckey, sizeof(fckey_t), MPI_BYTE, PrevTask, 101,
-        behind, sizeof(fckey_t), MPI_BYTE, NextTask, 101,
-        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    MPI_Sendrecv(&PAR(domain, -1).fckey, sizeof(fckey_t), MPI_BYTE, NextTask, 102,
-        before, sizeof(fckey_t), MPI_BYTE, PrevTask, 102,
-        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    TreeIter iter;
-    tree_iter_init(&iter, domain->tree);
-    intptr_t complete_count = 0;
-    intptr_t incomplete_count = 0;
-    for(Node * node = tree_iter_next(&iter);
-        node;
-        node = tree_iter_next(&iter)) {
-        if(ThisTask != 0 && 
-            tree_node_contains_fckey(node, before)) {
-            node->complete = FALSE;
-            incomplete_count ++;
-          #if 0
-            g_print("incomplete" NODE_FMT ", key" FCKEY_FMT "\n",
-                NODE_PRINT(node[0]), FCKEY_PRINT(before[0]));
-          #endif
-            continue;
-        }
-        if(ThisTask != NTask -1 &&
-            tree_node_contains_fckey(node, behind)) {
-            node->complete = FALSE;
-            incomplete_count ++;
-          #if 0
-            g_print("incomplete" NODE_FMT ", key" FCKEY_FMT "\n",
-                NODE_PRINT(node[0]), FCKEY_PRINT(behind[0]));
-          #endif
-            continue;
-        }
-        node->complete = TRUE;
-        complete_count ++;
+    for(int color = 0; color < NColor; color++) {
+        first[color] = PAR(color, 0).fckey;
+        last[color] = PAR(color, -1).fckey;
     }
-    g_slice_free(fckey_t, behind);
-    g_slice_free(fckey_t, before);
 
-    TAKETURNS {
-        g_print("%02d complete %ld incomplete %ld\n", ThisTask,
-            complete_count, incomplete_count);
+    exchange_cross_boundary(sizeof(fckey_t), first, last, before, behind);
+
+    for(int color = 0; color < NColor; color++) {
+        TreeIter iter;
+        tree_iter_init(&iter, D[color].tree);
+        intptr_t complete_count = 0;
+        intptr_t incomplete_count = 0;
+        for(Node * node = tree_iter_next(&iter);
+            node;
+            node = tree_iter_next(&iter)) {
+            if(ThisTask != 0 && 
+                tree_node_contains_fckey(node, &before[color])) {
+                node->complete = FALSE;
+                incomplete_count ++;
+              #if 1
+                g_print("%04d incomplete" NODE_FMT ", key" FCKEY_FMT "\n",
+                    D[color].index,
+                    NODE_PRINT(node[0]), FCKEY_PRINT(before[0]));
+              #endif
+                continue;
+            }
+            if(ThisTask != NTask -1 &&
+                tree_node_contains_fckey(node, &behind[color])) {
+                node->complete = FALSE;
+                incomplete_count ++;
+              #if 1
+                g_print("%04d incomplete" NODE_FMT ", key" FCKEY_FMT "\n",
+                    D[color].index,
+                    NODE_PRINT(node[0]), FCKEY_PRINT(behind[0]));
+              #endif
+                continue;
+            }
+            node->complete = TRUE;
+            complete_count ++;
+        }
+        TAKETURNS {
+            g_print("%04d complete %ld incomplete %ld\n", 
+                D[color].index,
+                complete_count, incomplete_count);
+        }
     }
+    g_free(behind);
+    g_free(before);
+    g_free(first);
+    g_free(last);
+
+}
+
+static void exchange_particles(Node * first, Node * last, Node * before, Node * behind) {
+    MPI_Datatype partype;
+    MPI_Type_contiguous(sizeof(par_t), MPI_BYTE, &partype);
+    MPI_Type_commit(&partype);
+    MPI_Request *frnt_req = g_new0(MPI_Request, NColor);
+    MPI_Request *rear_req = g_new0(MPI_Request, NColor);
+
+    intptr_t exchange = 0;
+    for(int color=0; color < NColor; color++) {
+        frnt_req[color] = MPI_REQUEST_NULL;
+        rear_req[color] = MPI_REQUEST_NULL;
+
+        int frnt_sendcount = 0;
+        int frnt_recvcount = 0;
+        int rear_sendcount = 0;
+        int rear_recvcount = 0;
+
+        int do_rear = tree_node_contains_node(&last[color], &behind[color]) || 
+                    tree_node_contains_node(&behind[color], &last[color]);
+        int do_frnt = tree_node_contains_node(&first[color], &before[color]) || 
+                    tree_node_contains_node(&before[color], &first[color]);
+        /* the domain with fewer particles send */
+        if(do_rear) {
+            if(last[color].npar < behind[color].npar) {
+                /* send */
+                rear_sendcount = last[color].npar;
+                if(rear_sendcount) {
+                    par_t * sendbuf = par_append(&D[color].psys, -rear_sendcount);
+                    MPI_Isend(sendbuf, rear_sendcount, partype,
+                        DOMAINTABLE[D[color].next].HostTask,
+                        D[color].index,
+                        MPI_COMM_WORLD, &rear_req[color]);
+                }
+            } else {
+                /* recv */ 
+                rear_recvcount = behind[color].npar;
+                if(rear_recvcount) {
+                    par_t * recvbuf = par_append(&D[color].psys, rear_recvcount);
+                    MPI_Irecv(recvbuf, rear_recvcount, partype, 
+                        DOMAINTABLE[D[color].next].HostTask,
+                        D[color].next + NDomain,
+                        MPI_COMM_WORLD, &rear_req[color]);
+                }
+            }
+        }
+        if(do_frnt) {
+            if(first[color].npar > before[color].npar) {
+                /* recv */
+                frnt_recvcount = before[color].npar;
+                if(frnt_recvcount) {
+                    par_t * recvbuf = par_prepend(&D[color].psys, frnt_recvcount);
+                    MPI_Irecv(recvbuf, frnt_recvcount, partype, 
+                        DOMAINTABLE[D[color].prev].HostTask,
+                        D[color].prev,
+                        MPI_COMM_WORLD, &frnt_req[color]);
+                }
+            } else {
+                /* send */
+                frnt_sendcount = first[color].npar;
+                if(frnt_sendcount) {
+                    par_t * sendbuf = par_prepend(&D[color].psys, -frnt_sendcount);
+                    MPI_Isend(sendbuf, frnt_sendcount, partype,
+                        DOMAINTABLE[D[color].prev].HostTask,
+                        D[color].index + NDomain,
+                        MPI_COMM_WORLD, &frnt_req[color]);
+                }
+            }
+        }
+        exchange += frnt_sendcount + rear_sendcount + frnt_recvcount + rear_recvcount;
+        TAKETURNS {
+            if(frnt_sendcount + rear_sendcount + frnt_recvcount + rear_recvcount > 0) {
+                g_print("%02d", ThisTask);
+                if(frnt_sendcount)
+                g_print(" %04df -> %04dr(% 5d)", D[color].index, D[color].prev, frnt_sendcount);
+                if(frnt_recvcount)
+                g_print(" %04df <- %04dr(% 5d)", D[color].index, D[color].prev, frnt_recvcount);
+                if(rear_sendcount)
+                g_print(" %04dr -> %04df(% 5d)", D[color].index, D[color].next, rear_sendcount);
+                if(rear_recvcount)
+                g_print(" %04dr <- %04df(% 5d)", D[color].index, D[color].next, rear_recvcount);
+                g_print("\n");
+            }
+        }
+    }
+    
+    /* now wait till the async calls finish */
+    for(int color=0; color < NColor; color++) {
+        MPI_Wait(&frnt_req[color], MPI_STATUS_IGNORE);
+        MPI_Wait(&rear_req[color], MPI_STATUS_IGNORE);
+    }
+
+    intptr_t total_exchange = 0;
+
+    MPI_Allreduce(&exchange, &total_exchange, 1, MPI_LONG, 
+            MPI_SUM, MPI_COMM_WORLD);
+
+    ROOTONLY {
+        g_message("exchanged %ld particles ", total_exchange);
+    }
+
+
+    MPI_Type_free(&partype);
+    g_free(frnt_req);
+    g_free(rear_req);
 }
 
 /*
@@ -267,7 +514,8 @@ static void domain_mark_complete(Domain * domain) {
  * the particles, and build the tree for the second time. 
  * The second tree is the real tree.
  * */
-void domain_build_tree(Domain * domain) {
+
+void domain_build_tree() {
     /* 
      *
      * adjust the domain boundary to build a tree, 
@@ -287,129 +535,72 @@ void domain_build_tree(Domain * domain) {
      *      the shorter one.
      *  */
 
-    tree_store_init(&domain->treestore);
-    domain->tree = tree_build(&domain->treestore, &domain->psys);
+    Node * first = g_new0(Node, NColor);
+    Node * last  = g_new0(Node, NColor);
+    Node * before= g_new0(Node, NColor);
+    Node * behind= g_new0(Node, NColor);
 
-    Node * first = tree_locate_fckey(domain->tree, &PAR(domain, 0).fckey);
-    Node * last = tree_locate_fckey(domain->tree, &PAR(domain, -1).fckey);
-    Node * before = g_slice_new(Node);
-    Node * behind = g_slice_new(Node);
+    /* first build a temporary tree */
+    for(int color = 0; color < NColor; color++) {
+        tree_store_init(&D[color].treestore);
+        D[color].tree = tree_build(&D[color].treestore, &D[color].psys);
 
-    g_message("root" NODE_FMT "", NODE_PRINT(domain->tree[0]));
-    g_message("first" NODE_FMT "", NODE_PRINT(domain->tree[0]));
-    MPI_Barrier(MPI_COMM_WORLD);
-    MPI_Sendrecv(first, sizeof(Node), MPI_BYTE, PrevTask, 1,
-        behind, sizeof(Node), MPI_BYTE, NextTask, 1,
-        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    MPI_Sendrecv(last, sizeof(Node), MPI_BYTE, NextTask, 2,
-        before, sizeof(Node), MPI_BYTE, PrevTask, 2,
-        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-    if(tree_node_contains_node(behind, last)) {
-        last = tree_node_find_image(last, behind);
-    }
-    if(tree_node_contains_node(before, first)) {
-        first = tree_node_find_image(first, before);
+        first[color] = *tree_locate_fckey(D[color].tree, &PAR(color, 0).fckey);
+        last[color]  = *tree_locate_fckey(D[color].tree, &PAR(color,-1).fckey);
     }
 
-    MPI_Barrier(MPI_COMM_WORLD);
-    MPI_Sendrecv(first, sizeof(Node), MPI_BYTE, PrevTask, 3,
-        behind, sizeof(Node), MPI_BYTE, NextTask, 3,
-        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Barrier(MPI_COMM_WORLD);
+    /* exchange the boundary nodes of the trees */
+    exchange_cross_boundary(sizeof(Node), first, last, before, behind);
 
-    MPI_Sendrecv(last, sizeof(Node), MPI_BYTE, NextTask, 4,
-        before, sizeof(Node), MPI_BYTE, PrevTask, 4,
-        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-    MPI_Datatype partype;
-    MPI_Type_contiguous(sizeof(par_t), MPI_BYTE, &partype);
-    MPI_Type_commit(&partype);
-    MPI_Request head_req;
-    MPI_Request tail_req;
-    int head_sendcount = 0;
-    int head_recvcount = 0;
-    int tail_sendcount = 0;
-    int tail_recvcount = 0;
-
-    int do_tail = tree_node_contains_node(last, behind) || 
-                tree_node_contains_node(behind, last);
-    int do_head = tree_node_contains_node(first, before) || 
-                tree_node_contains_node(before, first);
-
-    if(do_tail) {
-        if(last->npar < behind->npar) {
-            /* send */
-            tail_sendcount = last->npar;
-            par_t * sendbuf = par_append(&domain->psys, -tail_sendcount);
-            MPI_Isend(sendbuf, tail_sendcount, partype,
-                NextTask, 6,
-                MPI_COMM_WORLD, &tail_req);
-        } else {
-            /* recv */ 
-            tail_recvcount = behind->npar;
-            par_t * recvbuf = par_append(&domain->psys, tail_recvcount);
-            MPI_Irecv(recvbuf, tail_recvcount, partype, 
-                NextTask, 7, 
-                MPI_COMM_WORLD, &tail_req);
-        }
-    }
-    if(do_head) {
-        if(first->npar > before->npar) {
-            /* recv */
-            head_recvcount = before->npar;
-            par_t * recvbuf = par_prepend(&domain->psys, head_recvcount);
-            MPI_Irecv(recvbuf, head_recvcount, partype, 
-                PrevTask, 6,
-                MPI_COMM_WORLD, &head_req);
-        } else {
-            /* send */
-            head_sendcount = first->npar;
-            par_t * sendbuf = par_prepend(&domain->psys, -head_sendcount);
-            MPI_Isend(sendbuf, head_sendcount, partype, 
-                PrevTask, 7,
-                MPI_COMM_WORLD, &head_req);
-        }
-    }
-    intptr_t exchange = head_sendcount + tail_sendcount;
-    intptr_t total_exchange = 0;
-    
-    MPI_Allreduce(&exchange, &total_exchange, 1, MPI_LONG, 
-            MPI_SUM, MPI_COMM_WORLD);
-
-    ROOTONLY {
-        g_message("exchange of %ld particles ", total_exchange);
-    }
-    if(total_exchange > 0) {
+    for(int color = 0; color < NColor; color++) {
         TAKETURNS {
-            g_print("%02d -> %02d (%05d) "
-                    "%02d <- %02d (%05d) "
-                    "%02d -> %02d (%05d) "
-                    "%02d <- %02d (%05d) "
-                     "\n", 
-              ThisTask, PrevTask, head_sendcount,
-              ThisTask, PrevTask, head_recvcount,
-              ThisTask, NextTask, tail_sendcount,
-              ThisTask, NextTask, tail_recvcount
-              );
+            g_print("color %d "
+                " first " NODE_FMT 
+                " last " NODE_FMT 
+                " before " NODE_FMT 
+                " behind " NODE_FMT "\n",
+                color, 
+                NODE_PRINT(first[color]), 
+                NODE_PRINT(last[color]), 
+                NODE_PRINT(before[color]), 
+                NODE_PRINT(behind[color]));
         }
     }
-    if(do_head) MPI_Wait(&head_req, MPI_STATUS_IGNORE);
-    if(do_tail) MPI_Wait(&tail_req, MPI_STATUS_IGNORE);
+    for(int color = 0; color < NColor; color++) {
+        /* see if the node are joint, and exchange
+         * the image nodes instead.
+         * if each process is checking both first
+         * and last, then we cover all four situations*/
+        if(tree_node_contains_node(&behind[color], &last[color])) {
+            last[color] = *tree_node_find_image(&last[color], &behind[color]);
+        }
+        if(tree_node_contains_node(&before[color], &first[color])) {
+            first[color] = *tree_node_find_image(&first[color], &before[color]);
+        }
+    }
 
+    exchange_cross_boundary(sizeof(Node), first, last, before, behind);
 
-    MPI_Barrier(MPI_COMM_WORLD);
+    /* after we have decided the nodes to exchange, the tree becomes irrelavant. 
+     * the nodes that are useful are copied, and we only use the npar property. */
+    for(int color=0; color < NColor; color++) {
+        tree_store_destroy(&D[color].treestore);
+    }
 
-    MPI_Type_free(&partype);
-    g_slice_free(Node, before);
-    g_slice_free(Node, behind);
+    /* now we exchange the particles */
+    exchange_particles(first, last, before, behind);
 
-    tree_store_destroy(&domain->treestore);
-    tree_store_init(&domain->treestore);
-    domain->tree = tree_build(&domain->treestore, &domain->psys);
-    domain_mark_complete(domain);
+    g_free(before);
+    g_free(behind);
+    g_free(first);
+    g_free(last);
+
+    /* rebuild the tree */
+    for(int color=0; color < NColor; color++) {
+        tree_store_init(&D[color].treestore);
+        D[color].tree = tree_build(&D[color].treestore, &D[color].psys);
+    }
+    mark_complete();
 }
 
 void domain_destroy(Domain * domain) {

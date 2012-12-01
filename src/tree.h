@@ -45,7 +45,6 @@ typedef struct {
     "np: " "%d " \
     "nc: " "%d " \
     "}"
-
 static inline int tree_node_nchildren(Node * node) {
     if(node->type == NODE_TYPE_INNER) {
         int i = 0, p = 0;
@@ -60,7 +59,7 @@ static inline int tree_node_nchildren(Node * node) {
 #define NODE_PRINT(x) \
     (x).type, \
     (x).complete?"C":"I", \
-    FCKEY_PRINT((x).key), \
+    FCKEY_PRINT_PREFIX(x.key, FCKEY_BITS - (x).order), \
     (x).order, \
     (x).first, \
     (x).npar, \

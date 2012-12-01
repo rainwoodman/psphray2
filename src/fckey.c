@@ -1,7 +1,75 @@
 #include <stdlib.h>
 #include <stdint.h>
-
+#include <glib.h>
 #include "fckey.h"
+int FCKEY_BITS = 20;
+
+char * fckey_string_static(fckey_t key, int order) {
+    static char buffers[128][128];
+    static char active = 0;
+    char * buffer = buffers[active];
+    active ++;
+    if(active == 128) active = 0;
+    uint64_t part[3];
+    part[0] = key.a[0] & 077777777777; /* 33 bits */
+    part[1] = (key.a[0] >> 33) & 077777777777; /* 30 bits */
+    part[1] += (key.a[1] & 1) << 30;
+    part[2] = (key.a[1] >> 1);
+    if(part[2] || FCKEY_BITS > 21) {
+        g_snprintf(buffer, 128, "0%0.*lo%0.10lo%0.11lo", FCKEY_BITS - 21, part[2], part[1], part[0]);
+    } else {
+        if(part[1] || FCKEY_BITS > 11) {
+            g_snprintf(buffer, 128, "0%0.*lo%0.11lo", FCKEY_BITS - 11, part[1], part[0]);
+        } else {
+            g_snprintf(buffer, 128, "0%0.*lo", FCKEY_BITS, part[0]);
+        }
+    }
+    int len = strlen(buffer);
+    char * p = buffer + len - order;
+    while(*p) {
+        *p = 'X';
+        p++;
+    }
+    return buffer;
+}
+
+uint64_t _fckey_print_value(fckey_t key, int part, int rightshiftdigits) {
+    fckey_rightshift(&key, rightshiftdigits * 3);
+    switch(part) {
+        case 0:
+            return key.a[0] & 077777777777; /* 33 bits */
+        case 1:
+            return ((key.a[0] >> 33) & 077777777777) + ((key.a[1] & 1) << 33); /* 30 bits */
+        case 2:
+            return (key.a[1] >> 1);
+    }
+    abort();
+}
+
+int _fckey_print_width(fckey_t key, int part, int digits) {
+    switch(part) {
+        case 2:
+            if (digits > 21) 
+                return digits - 21;
+            else
+                return 0;
+        case 1:
+            if(digits > 11) {
+                if(digits < 21)
+                    return digits - 11;
+                else
+                    return 10;
+            } else
+                return 0;
+        case 0:
+            if(digits < 11)
+                return digits;
+            else
+                return 11;
+    }
+    abort();
+}
+
 
 static inline void fckey_or_with_leftshift(fckey_t * key, uint32_t value, int t) {
     if(t < 64) {
@@ -112,7 +180,10 @@ void fckey_from_ipos(fckey_t * key, int64_t pos[3]) {
 }
 
 void fckey_set_max(fckey_t * key) {
-    static int64_t pos[3] = {FCKEY_MAX, FCKEY_MAX, FCKEY_MAX};
+    static int64_t pos[3];
+    pos[0] = FCKEY_MAX;
+    pos[1] = FCKEY_MAX;
+    pos[2] = FCKEY_MAX;
     fckey_from_ipos(key, pos);
 }
 void fckey_xor(fckey_t * result, fckey_t * key1, fckey_t * key2) {

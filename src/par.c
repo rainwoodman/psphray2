@@ -3,8 +3,6 @@
 #include <stdlib.h>
 #include "commonblock.h"
 
-PSystem PAR_IN = { "INPUT", 0 };
-
 static intptr_t searchsorted (void * key, void * array, 
       size_t len, size_t elsize, GCompareFunc compare);
 
@@ -68,7 +66,6 @@ par_t * par_prepend(PSystem * psys, intptr_t add) {
         g_error("not enough space on front need %ld has %ld\n",
           add, psys->data - psys->base);
     }
-    g_message(" new par base = %p %p", psys->data, psys->data + add);
     if(add > 0) return psys->data;
     else return psys->data + add;
 }
@@ -102,8 +99,8 @@ static intptr_t searchsorted (void * target, void * array,
         return 0;
     }
 
-    while (left <= right) {
-        middle = (left + right) / 2;
+    while (left < right) {
+        middle = left + ((right-left) >> 1);
         cmpval = compare(target, data + (elsize * middle));
         if (cmpval > 0) {
             left = middle + 1;

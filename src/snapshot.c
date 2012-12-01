@@ -2,6 +2,9 @@
 #include <mpi.h>
 
 #include "commonblock.h"
+
+PSystem PAR_IN = { "INPUT", 0 };
+
 struct header_t{
     unsigned int N[6];
     double mass[6];
