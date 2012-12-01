@@ -542,8 +542,8 @@ void domain_build_tree() {
 
     /* first build a temporary tree */
     for(int color = 0; color < NColor; color++) {
-        tree_store_init(&D[color].treestore);
-        D[color].tree = tree_build(&D[color].treestore, &D[color].psys);
+        tree_store_init(&D[color].treestore, &D[color].psys);
+        D[color].tree = tree_build(&D[color].treestore);
 
         first[color] = *tree_locate_fckey(D[color].tree, &PAR(color, 0).fckey);
         last[color]  = *tree_locate_fckey(D[color].tree, &PAR(color,-1).fckey);
@@ -597,8 +597,8 @@ void domain_build_tree() {
 
     /* rebuild the tree */
     for(int color=0; color < NColor; color++) {
-        tree_store_init(&D[color].treestore);
-        D[color].tree = tree_build(&D[color].treestore, &D[color].psys);
+        tree_store_init(&D[color].treestore, &D[color].psys);
+        D[color].tree = tree_build(&D[color].treestore);
     }
     mark_complete();
 }

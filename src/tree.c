@@ -31,13 +31,15 @@ static Node * tree_store_pop(TreeStore * store, Node * node) {
     }
 
 }
-void tree_store_init(TreeStore * store) {
+void tree_store_init(TreeStore * store, PSystem * psys) {
     stack_init(&store->inner, InnerNode);
     stack_init(&store->leaf, Node);
+    store->psys = psys;
 }
 void tree_store_destroy(TreeStore * store) {
     stack_destroy(&store->leaf);
     stack_destroy(&store->inner);
+    store->psys = NULL;
 }
 
 int tree_node_locate_fckey(Node * node, fckey_t * key) {
@@ -95,15 +97,15 @@ static InnerNode * node_to_inner(TreeStore * store, Node * node) {
     }
 }
 
-static Node * create_leaf(TreeStore * store, Node * parent, par_t * first) {
+static Node * create_leaf(TreeStore * store, Node * parent, intptr_t ifirst) {
     if(parent->type == NODE_TYPE_LEAF) {
         parent = (Node*) node_to_inner(store, parent);
     }
     Node * rt = tree_store_append(store, NODE_TYPE_LEAF);
-    rt->first = first;
+    rt->ifirst = ifirst;
     rt->npar = 0;
     rt->order = parent->order - 1;
-    rt->key = first->fckey;
+    rt->key = store->psys->data[ifirst].fckey;
     fckey_clear(&rt->key, 3 * rt->order);
     rt->parent = (InnerNode*)parent;
     int pos = tree_node_locate_fckey((Node*)rt->parent, &rt->key);
@@ -111,17 +113,17 @@ static Node * create_leaf(TreeStore * store, Node * parent, par_t * first) {
     return rt;
 }
 
-static void tree_build_subtree(TreeStore * store, Node * subroot, par_t * first, intptr_t npar) {
-    par_t * i = first;
+static void tree_build_subtree(TreeStore * store, Node * subroot, intptr_t ifirst, intptr_t npar) {
+    intptr_t i = ifirst;
     intptr_t SKIPPED = 0;
     Node * node = (Node*) subroot;
     /* now scan over PAR, creating nodes */
-    while(i < first + npar) {
+    while(i < ifirst + npar) {
         /* the current particle is no longer in current node,
          * time to close parent nodes */
         while(node != (Node*) subroot->parent && 
-            ! tree_node_contains_fckey(node, &i->fckey)) {
-            node->npar = i - node->first;
+            ! tree_node_contains_fckey(node, &store->psys->data[i].fckey)) {
+            node->npar = i - node->ifirst;
             /* here we shall try to merge the children, if 
              * doing so is intended */
             node = (Node *) node->parent;
@@ -145,7 +147,7 @@ static void tree_build_subtree(TreeStore * store, Node * subroot, par_t * first,
         } else /* must be a leaf node */
         if(node->npar > CB.NodeSplitThresh && node->order > 0) {
             /* split the node */
-            i = node->first;
+            i = node->ifirst;
             node = create_leaf(store, node, i);
         } else {
             /* add particle to the leaf */
@@ -158,7 +160,7 @@ static void tree_build_subtree(TreeStore * store, Node * subroot, par_t * first,
         i += (1 + extrastep);
     }
     while(node != (Node *) subroot->parent) {
-        node->npar = i - node->first;
+        node->npar = i - node->ifirst;
         node = (Node *) node->parent;
     }
     MPI_Allreduce(MPI_IN_PLACE, &SKIPPED, 1, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
@@ -169,12 +171,12 @@ static void tree_build_subtree(TreeStore * store, Node * subroot, par_t * first,
     }
 }
 
-Node * tree_build(TreeStore * store, PSystem * psys) {
+Node * tree_build(TreeStore * store) {
     /* first make the root */
     Node * root = (Node *) tree_store_append(store, NODE_TYPE_INNER);
     root->order = FCKEY_BITS;
-    root->first = &psys->data[0];
-    tree_build_subtree(store, root, &psys->data[0], psys->length);
+    root->ifirst = 0;
+    tree_build_subtree(store, root, 0, store->psys->length);
     return root;
 }
 

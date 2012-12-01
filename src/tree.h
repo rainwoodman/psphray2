@@ -9,10 +9,7 @@ struct _Node;
     char complete; \
     char unused; \
     int32_t npar;  \
-    union { \
-        par_t * first; \
-        intptr_t ifirst; \
-    }; \
+    int32_t ifirst; \
     fckey_t key; \
     union { \
         struct _InnerNode * parent; \
@@ -34,6 +31,7 @@ typedef struct _InnerNode {
 typedef struct {
     Stack inner;
     Stack leaf;
+    PSystem * psys;
 } TreeStore;
 
 #define NODE_FMT \
@@ -41,7 +39,7 @@ typedef struct {
     "%c%s " \
     FCKEY_FMT "/"\
     "%d " \
-    "fst: " "%p " \
+    "fst: " "%d " \
     "np: " "%d " \
     "nc: " "%d " \
     "}"
@@ -61,7 +59,7 @@ static inline int tree_node_nchildren(Node * node) {
     (x).complete?"C":"I", \
     FCKEY_PRINT_PREFIX(x.key, FCKEY_BITS - (x).order), \
     (x).order, \
-    (x).first, \
+    (x).ifirst, \
     (x).npar, \
     tree_node_nchildren((Node*)&(x))
 
@@ -70,9 +68,9 @@ typedef struct {
   Node * current;
 } TreeIter;
 
-Node * tree_build(TreeStore * store, PSystem * psys);
+Node * tree_build(TreeStore * store);
 
-void tree_store_init(TreeStore * store);
+void tree_store_init(TreeStore * store, PSystem * psys);
 void tree_store_destroy(TreeStore * store);
 
 Node * tree_locate_fckey(Node * root, fckey_t * key);
