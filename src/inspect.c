@@ -12,9 +12,9 @@ void inspect_par(int color) {
         }
     }
     TAKETURNS {
-            g_print("%02d %02d local Par(%ld): ID = %ld - %ld, "
+            g_print("D%04d local Par(%ld): ID = %ld - %ld, "
               "KEY = " FCKEY_FMT " - " FCKEY_FMT "\n", 
-              ThisTask, color,
+              D[color].index,
               NPAR(color), PAR(color, 0).id, PAR(color, -1).id,
               FCKEY_PRINT(PAR(color, 0).fckey), FCKEY_PRINT(PAR(color, -1).fckey));
 //              inspect_tree();

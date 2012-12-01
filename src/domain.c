@@ -554,12 +554,12 @@ void domain_build_tree() {
 
     for(int color = 0; color < NColor; color++) {
         TAKETURNS {
-            g_print("color %d "
+            g_print("%04d "
                 " first " NODE_FMT 
                 " last " NODE_FMT 
                 " before " NODE_FMT 
                 " behind " NODE_FMT "\n",
-                color, 
+                D[color].index,
                 NODE_PRINT(first[color]), 
                 NODE_PRINT(last[color]), 
                 NODE_PRINT(before[color]), 
