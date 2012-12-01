@@ -347,8 +347,7 @@ static void mark_complete() {
     exchange_cross_boundary(sizeof(fckey_t), first, last, before, behind);
 
     for(int color = 0; color < NColor; color++) {
-        TreeIter iter;
-        tree_iter_init(&iter, D[color].tree);
+        TreeIter iter = {D[color].tree, NULL};
         intptr_t complete_count = 0;
         intptr_t incomplete_count = 0;
         for(Node * node = tree_iter_next(&iter);
