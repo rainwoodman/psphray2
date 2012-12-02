@@ -22,6 +22,7 @@ typedef struct _InnerNode {
     int32_t ichild[8];
 } InnerNode;
 
+/* hide implementation details */
 typedef struct _TreeStore TreeStore;
 
 #define NODE_FMT \
