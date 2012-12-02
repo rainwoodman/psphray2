@@ -1,6 +1,6 @@
 #include <glib.h>
-#include <mpi.h>
 #include <math.h>
+#include <stdint.h>
 #include "commonblock.h"
 static GError * error = NULL;
 static GKeyFile * keyfile = NULL;
@@ -67,13 +67,9 @@ static void SECTION_IO() {
     _string("IO", "snapbase", &CB.snapbase);
     _integer("IO", "SnapNumMajorBegin", &CB.SnapNumMajorBegin);
     dinteger("IO", "SnapNumMajorEnd", &CB.SnapNumMajorEnd, CB.SnapNumMajorBegin + 1);
-    dinteger("IO", "NumReader", &CB.NReader, NTask);
+    dinteger("IO", "NumReader", &CB.NReader, 0);
     dinteger("IO", "IDByteSize", &CB.IDByteSize, 8);
 
-    if(CB.NReader > NTask) {
-        g_warning("too many readers requested, using %d", NTask);
-        CB.NReader = NTask;
-    }
 }
 
 static void SECTION_DOMAIN() {

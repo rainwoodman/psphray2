@@ -1,8 +1,13 @@
 #include <glib.h>
 #include <mpi.h>
-
 #include <string.h>
 #include "commonblock.h"
+#include "fckey.h"
+#include "par.h"
+#include "tree.h"
+#include "snapshot.h"
+#include "domain.h"
+
 Domain * D = NULL;
 int NDomain = 0;
 int NColor = 0;
@@ -38,7 +43,7 @@ static void find_pov(fckey_t * POV) {
     intptr_t * cumNtot_desired = g_new0(intptr_t, NDomain);
     intptr_t * cumNtot = g_new0(intptr_t, NDomain);
 
-    intptr_t Ntot;
+    intptr_t Ntot = 0;
     MPI_Allreduce(&NPARin, &Ntot, 1, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
 
     for(i = 0; i < NDomain; i++) {
@@ -189,6 +194,7 @@ void domain_init() {
                 D[color].index = color * NTask + i;
                 D[color].prev = (color * NTask + i - 1 + NDomain) % NDomain;
                 D[color].next = (color * NTask + i + 1) % NDomain;
+                D[color].treestore = tree_store_alloc();
             }
         }
     }
@@ -229,7 +235,7 @@ void domain_decompose() {
     find_pov(POV);
 
     /* allocate space for domains hosted locally */
-    intptr_t Ntot;
+    intptr_t Ntot = 0;
     bincount_local(POV, N);
     MPI_Allreduce(N, segN, NDomain, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
 
@@ -347,13 +353,13 @@ static void mark_complete() {
     exchange_cross_boundary(sizeof(fckey_t), first, last, before, behind);
 
     for(int color = 0; color < NColor; color++) {
-        TreeIter iter = {D[color].tree, NULL};
+        TreeIter iter = {D[color].treestore, NULL, NULL};
         intptr_t complete_count = 0;
         intptr_t incomplete_count = 0;
         for(Node * node = tree_iter_next(&iter);
             node;
             node = tree_iter_next(&iter)) {
-            if(ThisTask != 0 && 
+            if(D[color].index != 0 && 
                 tree_node_contains_fckey(node, &before[color])) {
                 node->complete = FALSE;
                 incomplete_count ++;
@@ -364,7 +370,7 @@ static void mark_complete() {
               #endif
                 continue;
             }
-            if(ThisTask != NTask -1 &&
+            if(D[color].index != NDomain -1 &&
                 tree_node_contains_fckey(node, &behind[color])) {
                 node->complete = FALSE;
                 incomplete_count ++;
@@ -540,14 +546,23 @@ void domain_build_tree() {
     Node * behind= g_new0(Node, NColor);
 
     /* first build a temporary tree */
+    intptr_t skipped = 0;
     for(int color = 0; color < NColor; color++) {
-        tree_store_init(&D[color].treestore, &D[color].psys);
-        D[color].tree = tree_build(&D[color].treestore);
-
-        first[color] = *tree_locate_fckey(D[color].tree, &PAR(color, 0).fckey);
-        last[color]  = *tree_locate_fckey(D[color].tree, &PAR(color,-1).fckey);
+        tree_store_init(D[color].treestore, &D[color].psys, CB.NodeSplitThresh);
+        skipped += tree_build(D[color].treestore);
+    }
+    MPI_Allreduce(MPI_IN_PLACE, &skipped, 1, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
+    ROOTONLY {
+        if(skipped > 0) {
+            g_warning("particles out of box: %ld\n", skipped);
+        }
     }
 
+    for(int color = 0; color < NColor; color++) {
+        Node * root = tree_store_root(D[color].treestore);
+        first[color] = *tree_locate_down_fckey(D[color].treestore, root, &PAR(color, 0).fckey);
+        last[color]  = *tree_locate_down_fckey(D[color].treestore, root, &PAR(color,-1).fckey);
+    }
     /* exchange the boundary nodes of the trees */
     exchange_cross_boundary(sizeof(Node), first, last, before, behind);
 
@@ -571,10 +586,10 @@ void domain_build_tree() {
          * if each process is checking both first
          * and last, then we cover all four situations*/
         if(tree_node_contains_node(&behind[color], &last[color])) {
-            last[color] = *tree_node_find_image(&last[color], &behind[color]);
+            last[color] = *tree_locate_up_image(D[color].treestore, &last[color], &behind[color]);
         }
         if(tree_node_contains_node(&before[color], &first[color])) {
-            first[color] = *tree_node_find_image(&first[color], &before[color]);
+            first[color] = *tree_locate_up_image(D[color].treestore, &first[color], &before[color]);
         }
     }
 
@@ -583,7 +598,7 @@ void domain_build_tree() {
     /* after we have decided the nodes to exchange, the tree becomes irrelavant. 
      * the nodes that are useful are copied, and we only use the npar property. */
     for(int color=0; color < NColor; color++) {
-        tree_store_destroy(&D[color].treestore);
+        tree_store_destroy(D[color].treestore);
     }
 
     /* now we exchange the particles */
@@ -596,14 +611,16 @@ void domain_build_tree() {
 
     /* rebuild the tree */
     for(int color=0; color < NColor; color++) {
-        tree_store_init(&D[color].treestore, &D[color].psys);
-        D[color].tree = tree_build(&D[color].treestore);
+        tree_store_destroy(D[color].treestore);
+        tree_store_init(D[color].treestore, &D[color].psys, CB.NodeSplitThresh);
+        tree_build(D[color].treestore);
+        inspect_tree(D[color].treestore);
     }
     mark_complete();
 }
 
 void domain_destroy(Domain * domain) {
     par_destroy(&domain->psys);
-    tree_store_destroy(&domain->treestore);
-    domain->tree = NULL;
+    tree_store_destroy(domain->treestore);
+    tree_store_free(domain->treestore);
 }

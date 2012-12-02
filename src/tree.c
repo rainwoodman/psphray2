@@ -1,9 +1,47 @@
+#include <stdint.h>
 #include <glib.h>
-#include <mpi.h>
-#include <string.h>
-#include "commonblock.h"
+#include "fckey.h"
+#include "par.h"
+#include "tree.h"
 
-static Node * tree_store_append(TreeStore * store, int type) {
+#include "stack.h"
+struct _TreeStore {
+    Stack inner;
+    Stack leaf;
+    PSystem * psys;
+    int splitthresh;
+};
+
+static void tree_build_subtree(TreeStore * store, Node * subroot, intptr_t ifirst, intptr_t npar, intptr_t * skipped);
+
+/* fetch a node from the tree store,
+ * for i > 0, get innernode
+ * for i < 0, get leafnode
+ * for i ==0, crash */
+inline Node * tree_store_get_node(TreeStore * store, intptr_t i) {
+    if(i > 0) {
+        return (Node*) stack_get(&store->inner, i - 1, InnerNode);
+    }
+    if(i < 0) {
+        return stack_get(&store->leaf, -1 - i , Node);
+    }
+    return NULL;
+}
+
+/* the reverse operation of tree_store_get_node
+ * returns the index of a given node */
+inline intptr_t tree_store_get_index(TreeStore * store, Node * node) {
+    if(node->type == NODE_TYPE_LEAF) {
+        return -1 - (node - (Node*) store->leaf.data);
+    } else {
+        return 1 + ((InnerNode*)node - (InnerNode*) store->inner.data);
+    }
+}
+
+
+
+/* create a new node of given type, and return the pointer */
+static inline Node * tree_store_append(TreeStore * store, int type) {
     Node * rt;
     if(type == NODE_TYPE_LEAF) {
         rt = (Node*) stack_push(&store->leaf, Node);
@@ -13,7 +51,12 @@ static Node * tree_store_append(TreeStore * store, int type) {
     rt->type = type;
     return rt;
 }
-static Node * tree_store_pop(TreeStore * store, Node * node) {
+
+/* remove a node of given type. the node has to be the last
+ * node on the stack, otherwise the stack won't shrink
+ * references to the node shall be cleaned before this is called.
+ * */
+static inline Node * tree_store_pop(TreeStore * store, Node * node) {
      if(node->type == NODE_TYPE_LEAF) {
         if(node == (Node*) stack_peek(&store->leaf, Node)) {
             return (Node*) stack_pop(&store->leaf, Node);
@@ -29,12 +72,32 @@ static Node * tree_store_pop(TreeStore * store, Node * node) {
             return NULL;
         }
     }
-
 }
-void tree_store_init(TreeStore * store, PSystem * psys) {
+
+TreeStore * tree_store_alloc() {
+    return g_slice_new0(TreeStore);
+}
+void tree_store_free(TreeStore * store) {
+    g_slice_free(TreeStore, store);
+}
+/* initialize a tree store and build the tree for given psys*/
+void tree_store_init(TreeStore * store, PSystem * psys, int splitthresh) {
     stack_init(&store->inner, InnerNode);
     stack_init(&store->leaf, Node);
+    store->splitthresh = splitthresh;
     store->psys = psys;
+}
+
+/* build a tree and returns number of particles
+ * skipped because they are out of box */
+intptr_t tree_build(TreeStore * store) {
+    intptr_t skipped = 0;
+    Node * root = (Node *) tree_store_append(store, NODE_TYPE_INNER);
+    root->order = FCKEY_BITS;
+    root->ifirst = 0;
+    tree_build_subtree(store, root, 0, store->psys->length, &skipped);
+    return skipped;
+
 }
 void tree_store_destroy(TreeStore * store) {
     stack_destroy(&store->leaf);
@@ -42,7 +105,10 @@ void tree_store_destroy(TreeStore * store) {
     store->psys = NULL;
 }
 
-int tree_node_locate_fckey(Node * node, fckey_t * key) {
+/* returns the child node position that contains the key
+ * or -1 if it is not contained.
+ * */
+int tree_node_childpos_fckey(Node * node, fckey_t * key) {
     /* returns -1 if not in the node, otherwise returns
      * the octrant(0-7) that contains the key */
     fckey_t tmp;
@@ -55,40 +121,52 @@ int tree_node_locate_fckey(Node * node, fckey_t * key) {
     }
 }
 
+/* test if key is contained in node 
+ * returns 1 if key is contained in node
+ * 0 if not.
+ * */
 int tree_node_contains_fckey(Node * node, fckey_t * key) {
-    return tree_node_locate_fckey(node, key) != -1;
+    return tree_node_childpos_fckey(node, key) != -1;
 }
 
+/* test if needle is a subnode of node 
+ * returns 1 if needle and node are identical
+ * or needle is a child of node */
 int tree_node_contains_node(Node * node, Node * needle) {
-    /* returns 1 if needle and node are identical
-     * or needle is a child of node */
     return node->order >= needle->order 
        && tree_node_contains_fckey(node, & needle->key);
 }
-Node * tree_node_find_image(Node * node, Node * needle) {
-    /* returns the first parent of node that is identical to needle */
+
+/* returns the first parent of node that is identical to needle
+ * identical means both key and order match */
+Node * tree_locate_up_image(TreeStore * store, Node * node, Node * needle) {
     Node * image = node;
     while(image) {
         if(fckey_cmp(&image->key, &needle->key) == 0 && 
            image->order == needle->order) {
             return image;
         }
-        image = (Node *) image->parent;
+        image = (Node *) tree_store_get_node(store, image->iparent);
     }
     return NULL;
 }
 
-static InnerNode * node_to_inner(TreeStore * store, Node * node) {
+
+/* converts a node to a inner node.
+ * the index of the node may change, but this routine takes care
+ * of maintaining the reference in the tree from the parent
+ * */
+static inline InnerNode * node_to_inner(TreeStore * store, Node * node) {
     if(node->type == NODE_TYPE_LEAF) {
         InnerNode * rt = (InnerNode*) tree_store_append(store, NODE_TYPE_INNER);
-        memcpy(rt, node, sizeof(Node));
-        /* memcpy will overwrite type */
+        *((Node*) rt) = *node;
+        /* the copy will overwrite type */
         rt->type = NODE_TYPE_INNER;
         /* now replace the reference to the node in the parent */
-        InnerNode * parent = node->parent;
+        InnerNode * parent = (InnerNode*) tree_store_get_node(store, rt->iparent);
         if(parent) {
-            int pos = tree_node_locate_fckey((Node*)parent, &rt->key);
-            parent->child[pos] = (Node *)rt;
+            int pos = tree_node_childpos_fckey((Node*)parent, &rt->key);
+            parent->ichild[pos] = tree_store_get_index(store, (Node*)rt);
         }
         tree_store_pop(store, node);
         return rt;
@@ -97,7 +175,12 @@ static InnerNode * node_to_inner(TreeStore * store, Node * node) {
     }
 }
 
-static Node * create_leaf(TreeStore * store, Node * parent, intptr_t ifirst) {
+/* add a leaf to the given parent. if parent is not an inner node
+ * convert it with node_to_inner.
+ * also update the parent's child list to include this newly
+ * created leaf node.
+ * */
+static inline Node * create_leaf(TreeStore * store, Node * parent, intptr_t ifirst) {
     if(parent->type == NODE_TYPE_LEAF) {
         parent = (Node*) node_to_inner(store, parent);
     }
@@ -107,29 +190,36 @@ static Node * create_leaf(TreeStore * store, Node * parent, intptr_t ifirst) {
     rt->order = parent->order - 1;
     rt->key = store->psys->data[ifirst].fckey;
     fckey_clear(&rt->key, 3 * rt->order);
-    rt->parent = (InnerNode*)parent;
-    int pos = tree_node_locate_fckey((Node*)rt->parent, &rt->key);
-    rt->parent->child[pos] = rt;
+    rt->iparent = tree_store_get_index(store, parent);
+    int pos = tree_node_childpos_fckey(parent, &rt->key);
+    ((InnerNode*)parent)->ichild[pos] = tree_store_get_index(store, rt);
     return rt;
 }
 
-static void tree_build_subtree(TreeStore * store, Node * subroot, intptr_t ifirst, intptr_t npar) {
+/* build a tree as the subtree of subroot, with particles
+ * first to first + npar.
+ * returns the number of particles that are out of the box
+ * in skipped.
+ * */
+static void tree_build_subtree(TreeStore * store, Node * subroot, intptr_t ifirst, intptr_t npar, intptr_t * skipped) {
+    Node * exterior = tree_store_get_node(store, subroot->iparent);
     intptr_t i = ifirst;
     intptr_t SKIPPED = 0;
-    Node * node = (Node*) subroot;
+    Node * node = subroot;
     /* now scan over PAR, creating nodes */
     while(i < ifirst + npar) {
         /* the current particle is no longer in current node,
          * time to close parent nodes */
-        while(node != (Node*) subroot->parent && 
-            ! tree_node_contains_fckey(node, &store->psys->data[i].fckey)) {
+        while(node !=  exterior && 
+            ! tree_node_contains_fckey(node, 
+                &store->psys->data[i].fckey)) {
             node->npar = i - node->ifirst;
             /* here we shall try to merge the children, if 
-             * doing so is intended */
-            node = (Node *) node->parent;
+             * doing so is intended. not merging any for now */
+            node = tree_store_get_node(store, node->iparent);
         }
-        if(node == (Node*) subroot->parent) {
-            /* particle not in any nodes, need to skip it */
+        if(node == exterior) {
+            /* particle is not in any nodes, skip it */
             SKIPPED ++;
             i ++;
             continue;
@@ -144,45 +234,37 @@ static void tree_build_subtree(TreeStore * store, Node * subroot, intptr_t ifirs
             /* create a child of this inner node
              * particle will be added later */
             node = create_leaf(store, node, i);
-        } else /* must be a leaf node */
-        if(node->npar > CB.NodeSplitThresh && node->order > 0) {
-            /* split the node */
+            goto add_particles;
+        } 
+        /* must be a leaf node */
+        if(node->npar > store->splitthresh && node->order > 0) {
+            /* rewind, split the node */
             i = node->ifirst;
             node = create_leaf(store, node, i);
-        } else {
-            /* add particle to the leaf */
-            /* code will fall through */
+            /* fall through add the particles */
         }
-        int extrastep = 0;
-        /* TODO: figure a bigger step size, to directly fill
-         * the leaf  */
-        node->npar += extrastep + 1;
-        i += (1 + extrastep);
+        /* must be a leaf and no split is required,
+         * code will fall through */
+        add_particles:
+        /* add particle to the leaf */
+
+        /* TODO: figure a bigger step size: no need to scan
+         * every particle  */
+        node->npar +=  1;
+        i += 1;
     }
-    while(node != (Node *) subroot->parent) {
+    /* close the parent nodes of the last scanned particle */
+    while(node != exterior) {
         node->npar = i - node->ifirst;
-        node = (Node *) node->parent;
+        node = tree_store_get_node(store, node->iparent);
     }
-    MPI_Allreduce(MPI_IN_PLACE, &SKIPPED, 1, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
-    ROOTONLY {
-        if(SKIPPED > 0) {
-            g_warning("particles out of box: %ld\n", SKIPPED);
-        }
+    if(SKIPPED && skipped) {
+        *skipped = SKIPPED;
     }
 }
 
-Node * tree_build(TreeStore * store) {
-    /* first make the root */
-    Node * root = (Node *) tree_store_append(store, NODE_TYPE_INNER);
-    root->order = FCKEY_BITS;
-    root->ifirst = 0;
-    tree_build_subtree(store, root, 0, store->psys->length);
-    return root;
-}
-
-Node * tree_locate_fckey(Node * root, fckey_t * key) {
-    TreeIter iter;
-    tree_iter_init(&iter, root);
+Node * tree_locate_down_fckey(TreeStore * store, Node * start, fckey_t * key) {
+    TreeIter iter = {store, start, NULL};
     Node * node = tree_iter_next(&iter);
     while(node) {
         if(tree_node_contains_fckey(node, key)) {
@@ -198,13 +280,17 @@ Node * tree_locate_fckey(Node * root, fckey_t * key) {
     return node;
 }
 
-void tree_iter_init(TreeIter * iter, Node * root) {
+void tree_iter_init(TreeIter * iter, TreeStore * store, Node * root) {
+    iter->store = store;
     iter->root = root;
     iter->current = NULL;
 }
 
 static Node * tree_iter_real_next(TreeIter * iter, int skip_children) {
     if(iter->current == NULL) {
+        if(iter->root == NULL) {
+            iter->root = tree_store_get_node(iter->store, 1);
+        }
         iter->current = iter->root;
         return iter->current;
     } else {
@@ -213,8 +299,9 @@ static Node * tree_iter_real_next(TreeIter * iter, int skip_children) {
         ) {
             int i = 0;
             while(i < 8) {
-                if(((InnerNode *) iter->current)->child[i]) {
-                    iter->current = ((InnerNode *) iter->current)->child[i];
+                if(((InnerNode *) iter->current)->ichild[i]) {
+                    iter->current = tree_store_get_node(iter->store, 
+                           ((InnerNode *) iter->current)->ichild[i]);
                     //g_message("visiting child");
                     return iter->current;
                 }
@@ -222,19 +309,21 @@ static Node * tree_iter_real_next(TreeIter * iter, int skip_children) {
             }
         } /* fall through */
         /* visit sibling */
-        InnerNode * parent = iter->current->parent;
+        InnerNode * parent = (InnerNode*) tree_store_get_node(iter->store, 
+                        iter->current->iparent);
         while(iter->current != iter->root) {
-            int i = tree_node_locate_fckey((Node *)parent, 
+            int i = tree_node_childpos_fckey((Node *)parent, 
                 & iter->current->key) + 1;
             while(i < 8) {
-                if(parent->child[i] != NULL) {
-                    iter->current = parent->child[i];
+                if(parent->ichild[i]) {
+                    iter->current = tree_store_get_node(iter->store, 
+                            parent->ichild[i]);
                     return iter->current;
                 }
                 i++;
             }
             iter->current = (Node*) parent;
-            parent = parent->parent;
+            parent = (InnerNode *)tree_store_get_node(iter->store, parent->iparent);
         }
         iter->current = NULL;
         return NULL;

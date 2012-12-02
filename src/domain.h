@@ -1,7 +1,6 @@
 typedef struct _Domain {
     PSystem psys;
-    TreeStore treestore;
-    Node * tree;
+    TreeStore * treestore;
     int index;
     int prev;
     int next;

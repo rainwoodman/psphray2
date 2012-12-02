@@ -2,6 +2,10 @@
 #include <mpi.h>
 
 #include "commonblock.h"
+#include "fckey.h"
+#include "par.h"
+#include "tree.h"
+#include "domain.h"
 void inspect_par(int color) {
     for(intptr_t i = 0; NPAR(color) && i < NPAR(color) - 1; i++) {
         if(!fckey_cmp(&PAR(color, i).fckey, &PAR(color, i + 1).fckey) < 0) {
@@ -20,8 +24,8 @@ void inspect_par(int color) {
 //              inspect_tree();
     }
 }
-void inspect_tree(int color) {
-    TreeIter iter = {D[color].tree, NULL};
+void inspect_tree(TreeStore * store) {
+    TreeIter iter = {store, NULL, NULL};
     Node * node = tree_iter_next(&iter);
     intptr_t count = 0;
     g_print("%02d tree dump\n", ThisTask);

@@ -1,7 +1,8 @@
 #include <glib.h>
-#include <mpi.h>
+#include <stdint.h>
 #include <stdlib.h>
-#include "commonblock.h"
+#include "fckey.h"
+#include "par.h"
 
 static intptr_t searchsorted (void * key, void * array, 
       size_t len, size_t elsize, GCompareFunc compare);
@@ -68,10 +69,6 @@ par_t * par_prepend(PSystem * psys, intptr_t add) {
     }
     if(add > 0) return psys->data;
     else return psys->data + add;
-}
-
-void par_update_igm(par_t * i) {
-    i->IGMmass = i->mass * (1.0 - get_cloud_fraction(i->rho * (CB.a * CB.a * CB.a)));
 }
 
 static intptr_t searchsorted (void * target, void * array, 

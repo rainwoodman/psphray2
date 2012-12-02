@@ -1,6 +1,7 @@
 #include <glib.h>
 #include <math.h>
 #include <stdint.h>
+#include <mpi.h>
 #include "commonblock.h"
 #include "gadgetall.h"
 #ifndef M_PI

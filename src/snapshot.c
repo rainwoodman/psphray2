@@ -2,7 +2,9 @@
 #include <mpi.h>
 
 #include "commonblock.h"
-
+#include "fckey.h"
+#include "par.h"
+#include "snapshot.h"
 PSystem PAR_IN = { "INPUT", 0 };
 
 static MPI_Comm ReaderComm = 0;
@@ -119,11 +121,14 @@ static intptr_t snapshot_prepare(SnapHeader * h) {
     MPI_Bcast(h, sizeof(SnapHeader), MPI_BYTE, 0, MPI_COMM_WORLD);
 
     Nfile = h->Nfile;
+    if(CB.NReader == 0) CB.NReader = NTask;
+    if(CB.NReader > NTask) {
+        ROOTONLY g_warning("too many readers requested, using %d", NTask);
+        CB.NReader = NTask;
+    }
     if(CB.NReader > h->Nfile) {
         CB.NReader = h->Nfile;
-        ROOTONLY {
-            g_warning("NReader bigger than files, using Nfile");
-        }
+        ROOTONLY g_warning("NReader bigger than files, using Nfile");
     }
     NReader = CB.NReader;
 
@@ -252,11 +257,11 @@ static void convert_to_fckey_t(char * in, char * out, size_t N, int elsize, doub
     for(intptr_t i = 0; i < N; i++) {
         if(elsize == 8) {
             for(int d=0; d < 3; d++) {
-                ipos[d] = ((double*)in)[i* 3 + d] / BoxSize * FCKEY_MAX;
+                ipos[d] = ((double*)in)[i* 3 + d] / BoxSize * (FCKEY_MAX + 1);
             }
         } else {
             for(int d=0; d < 3; d++) {
-                ipos[d] = ((float*)in)[i* 3 + d] / BoxSize * FCKEY_MAX;
+                ipos[d] = ((float*)in)[i* 3 + d] / BoxSize * (FCKEY_MAX + 1);
             }
         }
         fckey_from_ipos(&((fckey_t *)out)[i], ipos);
@@ -380,9 +385,12 @@ void snapshot_read(SnapHeader * h) {
     for(fid = ReaderColor * Nfile / NReader;
         fid < (ReaderColor + 1) * Nfile / NReader;
         fid ++) {
-        SnapHeader h;
-        snapshot_read_one(fid, &h);
+        SnapHeader hh;
+        snapshot_read_one(fid, &hh);
         MPI_Barrier(MPI_COMM_WORLD);
+    }
+    for(par_t * i = &PARin(0); i < &PARin(-1); i++) {
+        i->IGMmass = i->mass * (1.0 - get_cloud_fraction(i->rho * (h->a * h->a * h->a)));
     }
 }
 

@@ -8,17 +8,18 @@ typedef struct {
 #define stack_push(stack, type) ((type*) stack_push1(stack))
 #define stack_pop(stack, type) ((type*) stack_pop1(stack))
 #define stack_peek(stack, type) ((type*) stack_peek1(stack))
+#define stack_get(stack, i, type) ((type*) stack_get1(stack, i))
 #define stack_destroy(stack) (g_free((stack)->data), (stack)->data = NULL)
 #define stack_init(stack, type) stack_init1(stack, sizeof(type))
 
-static void stack_init1(Stack * stack, size_t elsize) {
+static inline void stack_init1(Stack * stack, size_t elsize) {
     stack->data = NULL;
     stack->elsize = elsize;
     stack->len = 0;
     stack->size = 0;
 }
 
-static void * stack_push1(Stack * stack) {
+static inline void * stack_push1(Stack * stack) {
     if(stack->data == NULL) {
         stack->len = 0;
         stack->size = 0;
@@ -39,12 +40,15 @@ static void * stack_push1(Stack * stack) {
     return rt;
 }
 
-static void * stack_peek1(Stack * stack) {
+static inline void * stack_peek1(Stack * stack) {
     g_assert(stack->len > 0);
     return (void*)(((char*)stack->data) + (stack->len - 1) * stack->elsize);
 }
+static inline void * stack_get1(Stack * stack, intptr_t i) {
+    return (void*)(((char*)stack->data) + i * stack->elsize);
+}
 
-static void * stack_pop1(Stack * stack) {
+static inline void * stack_pop1(Stack * stack) {
     g_assert(stack->len > 0);
     return (void*)(((char*)stack->data) + (--stack->len) * stack->elsize);
 }

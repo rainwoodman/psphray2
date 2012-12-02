@@ -2,36 +2,7 @@
 #include <stdint.h>
 #include <glib.h>
 #include "fckey.h"
-int FCKEY_BITS = 20;
-
-char * fckey_string_static(fckey_t key, int order) {
-    static char buffers[128][128];
-    static char active = 0;
-    char * buffer = buffers[active];
-    active ++;
-    if(active == 128) active = 0;
-    uint64_t part[3];
-    part[0] = key.a[0] & 077777777777; /* 33 bits */
-    part[1] = (key.a[0] >> 33) & 077777777777; /* 30 bits */
-    part[1] += (key.a[1] & 1) << 30;
-    part[2] = (key.a[1] >> 1);
-    if(part[2] || FCKEY_BITS > 21) {
-        g_snprintf(buffer, 128, "0%0.*lo%0.10lo%0.11lo", FCKEY_BITS - 21, part[2], part[1], part[0]);
-    } else {
-        if(part[1] || FCKEY_BITS > 11) {
-            g_snprintf(buffer, 128, "0%0.*lo%0.11lo", FCKEY_BITS - 11, part[1], part[0]);
-        } else {
-            g_snprintf(buffer, 128, "0%0.*lo", FCKEY_BITS, part[0]);
-        }
-    }
-    int len = strlen(buffer);
-    char * p = buffer + len - order;
-    while(*p) {
-        *p = 'X';
-        p++;
-    }
-    return buffer;
-}
+unsigned int FCKEY_BITS = 20;
 
 uint64_t _fckey_print_value(fckey_t key, int part, int rightshiftdigits) {
     fckey_rightshift(&key, rightshiftdigits * 3);
@@ -176,7 +147,7 @@ void fckey_from_ipos(fckey_t * key, int64_t pos[3]) {
     key->a[0] = 0;
     key->a[1] = 0;
     for(d=0; d < 3; d++)
-        fckey_fill(key, pos[d], d);
+        fckey_fill(key, (uint64_t) pos[d] & FCKEY_MAX, d);
 }
 
 void fckey_set_max(fckey_t * key) {

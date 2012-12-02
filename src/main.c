@@ -2,6 +2,12 @@
 #include <mpi.h>
 
 #include "commonblock.h"
+#include "fckey.h"
+#include "par.h"
+#include "tree.h"
+#include "snapshot.h"
+#include "domain.h"
+
 
 void abort() {
     MPI_Abort(MPI_COMM_WORLD, 1);
@@ -73,7 +79,6 @@ int main(int argc, char * argv[]) {
         domain_decompose();
         domain_build_tree();
 
-        par_update_igm();
     }
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_Finalize();

@@ -59,6 +59,7 @@ typedef struct {
 } CommonBlock;
 
 extern CommonBlock CB;
+#ifdef MPI_VERSION
 extern int ThisTask;
 extern int NTask;
 extern int PrevTask;
@@ -70,13 +71,4 @@ void common_block_bootstrap();
 #define TAKETURNS \
     for(int __i__ = 0; MPI_Barrier(MPI_COMM_WORLD), __i__ < NTask; \
         MPI_Barrier(MPI_COMM_WORLD), __i__++) if(ThisTask == __i__)
-
-
-#include "stack.h"
-#include "fckey.h"
-#include "par.h"
-#include "paramfile.h"
-#include "snapshot.h"
-#include "tree.h"
-#include "domain.h"
-#include "gadget.h"
+#endif
