@@ -8,7 +8,8 @@ static intptr_t searchsorted (void * key, void * array,
       size_t len, size_t elsize, GCompareFunc compare);
 
 void par_destroy(PSystem * psys) {
-    g_free(psys->base);
+    if(psys->base) g_free(psys->base);
+    psys->base = NULL;
     psys->data = NULL;
     psys->size = 0;
     psys->length = 0;

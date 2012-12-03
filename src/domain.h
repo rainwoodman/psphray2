@@ -14,6 +14,7 @@ typedef struct {
 void domain_init();
 void domain_decompose();
 void domain_build_tree();
+void domain_cleanup();
 void domain_destroy();
 
 #define PAR(color, i) (D[color].psys.data[((signed)(i)<0)?((i)+D[color].psys.length):(i)])

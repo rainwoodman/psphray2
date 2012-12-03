@@ -321,6 +321,7 @@ void domain_decompose() {
     g_free(sdispls);
     g_free(sendcounts);
     g_free(segN);
+    g_free(N);
     g_free(POV);
     par_destroy(PAR_BUFFER_IN);
 
@@ -611,7 +612,6 @@ void domain_build_tree() {
 
     /* rebuild the tree */
     for(int color=0; color < NColor; color++) {
-        tree_store_destroy(D[color].treestore);
         tree_store_init(D[color].treestore, &D[color].psys, CB.NodeSplitThresh);
         tree_build(D[color].treestore);
         inspect_tree(D[color].treestore);
@@ -619,8 +619,19 @@ void domain_build_tree() {
     mark_complete();
 }
 
-void domain_destroy(Domain * domain) {
-    par_destroy(&domain->psys);
-    tree_store_destroy(domain->treestore);
-    tree_store_free(domain->treestore);
+void domain_cleanup() {
+    for(int color = 0; color < NColor; color++) {
+        par_destroy(&D[color].psys);
+        tree_store_destroy(D[color].treestore);
+    }
+}
+
+void domain_destroy() {
+    for(int color = 0; color < NColor; color++) {
+        par_destroy(&D[color].psys);
+        tree_store_destroy(D[color].treestore);
+        tree_store_free(D[color].treestore);
+    }
+    g_free(D);
+    D = NULL;
 }

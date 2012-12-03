@@ -6,6 +6,7 @@
 #include "par.h"
 #include "tree.h"
 #include "snapshot.h"
+#include "paramfile.h"
 #include "domain.h"
 
 
@@ -38,15 +39,15 @@ static void log_handler
 
 int main(int argc, char * argv[]) {
 
-    GError * error = NULL;
-    GOptionContext * context = g_option_context_new("paramfile");
-    g_option_context_add_main_entries(context, entries, NULL);
-
     MPI_Init(&argc, &argv);
     g_log_set_default_handler(log_handler, NULL);
     common_block_bootstrap();
 
     ROOTONLY {
+        GError * error = NULL;
+        GOptionContext * context = g_option_context_new("paramfile");
+        g_option_context_add_main_entries(context, entries, NULL);
+
         if(!g_option_context_parse(context, &argc, &argv, &error)) {
             g_print("Option parsing failed: %s", error->message);
             abort();
@@ -57,6 +58,7 @@ int main(int argc, char * argv[]) {
         }
         paramfile_read(paramfilename[0]);
         g_message("Reading param file %s", paramfilename[0]);
+        g_option_context_free(context);
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
@@ -78,8 +80,10 @@ int main(int argc, char * argv[]) {
 
         domain_decompose();
         domain_build_tree();
-
+        domain_cleanup();
     }
+
+    domain_destroy();
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_Finalize();
     return 0;
