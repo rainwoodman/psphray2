@@ -80,13 +80,3 @@ void tree_iter_init(TreeIter * iter, TreeStore * store, Node * root);
 Node * tree_iter_next(TreeIter * iter);
 Node * tree_iter_next_sibling(TreeIter * iter);
 
-/*
-inline void tree_node_get_aabb(Node * node, double pos[3], double size[3]) {
-    int64_t ipos[3];
-    fckey_to_ipos(&node->key, ipos);
-    for(int d=0; d < 3; d++) {
-        pos[d] = CB.BoxSize * ipos[d] / (FCKEY_MAX + 1);
-        size[d] = CB.BoxSize / (1L << (FCKEY_BITS - node->order));
-    }
-}
-*/
