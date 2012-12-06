@@ -277,8 +277,8 @@ static void tree_build_subtree(TreeStore * store, Node * subroot, intptr_t ifirs
 }
 
 Node * tree_locate_down_fckey(TreeStore * store, Node * start, fckey_t * key) {
-    TreeIter iter = {store, start, NULL};
-    Node * node = tree_iter_next(&iter);
+    TreeIter iter;
+    Node * node = tree_iter_init(&iter, store, start);
     while(node) {
         if(tree_node_contains_fckey(node, key)) {
             if(node->type != NODE_TYPE_INNER) {
@@ -293,17 +293,22 @@ Node * tree_locate_down_fckey(TreeStore * store, Node * start, fckey_t * key) {
     return node;
 }
 
-void tree_iter_init(TreeIter * iter, TreeStore * store, Node * root) {
-    iter->store = store;
-    iter->root = root;
-    iter->current = NULL;
+/* create ghost nodes that terminate the dangling children.*/
+void tree_terminate(TreeStore * store) {
+    for(intptr_t i = 0; i < store->inner.len; i++) {
+        InnerNode * parent = (InnerNode*) tree_store_get_node(store, i + 1);
+        for(int j = 0; j < 8; j++) {
+            if(parent->ichild[j] != 0) continue;
+            Node * node = create_leaf_at(store, parent, j);
+            node->ifirst = 0;
+            node->npar = 0;
+            node->type = NODE_TYPE_GHOST;
+        }
+    }
 }
 
 static Node * tree_iter_real_next(TreeIter * iter, int skip_children) {
     if(iter->current == NULL) {
-        if(iter->root == NULL) {
-            iter->root = tree_store_get_node(iter->store, 1);
-        }
         iter->current = iter->root;
         return iter->current;
     } else {
@@ -342,21 +347,19 @@ static Node * tree_iter_real_next(TreeIter * iter, int skip_children) {
         return NULL;
     }
 }
+
+Node * tree_iter_init(TreeIter * iter, TreeStore * store, Node * root) {
+    iter->store = store;
+    iter->root = root;
+    iter->current = NULL;
+    if(iter->root == NULL) {
+        iter->root = tree_store_get_node(iter->store, 1);
+    }
+    return tree_iter_real_next(iter, 0);
+}
 Node * tree_iter_next(TreeIter * iter) {
     return tree_iter_real_next(iter, FALSE);
 }
 Node * tree_iter_next_sibling(TreeIter * iter) {
     return tree_iter_real_next(iter, TRUE);
-}
-void tree_terminate(TreeStore * store) {
-    for(intptr_t i = 0; i < store->inner.len; i++) {
-        InnerNode * parent = (InnerNode*) tree_store_get_node(store, i + 1);
-        for(int j = 0; j < 8; j++) {
-            if(parent->ichild[j] != 0) continue;
-                Node * node = create_leaf_at(store, parent, j);
-                node->ifirst = 0;
-                node->npar = 0;
-                node->type = NODE_TYPE_GHOST;
-        }
-    }
 }

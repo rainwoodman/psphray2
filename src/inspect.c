@@ -25,17 +25,17 @@ void inspect_par(int color) {
     }
 }
 void inspect_tree(TreeStore * store) {
-    TreeIter iter = {store, NULL, NULL};
-    Node * node = tree_iter_next(&iter);
+    TreeIter iter;
     intptr_t count = 0;
     g_print("%02d tree dump\n", ThisTask);
-    while(node) {
+    for(Node * node = tree_iter_init(&iter, store, NULL);
+        node;
+        node = tree_iter_next(&iter)) {
         #if 0
         if(node->type != NODE_TYPE_LEAF)
         #endif
         g_print(NODE_FMT "\n", 
                 NODE_PRINT(node[0]));
-        node = tree_iter_next(&iter);
         count ++;
     }
     g_print("%02d total %ld\n", ThisTask, count);

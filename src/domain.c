@@ -392,10 +392,10 @@ static void mark_complete() {
     }
 
     for(int color = 0; color < NColor; color++) {
-        TreeIter iter = {D[color].treestore, NULL, NULL};
+        TreeIter iter;
         intptr_t complete_count = 0;
         intptr_t incomplete_count = 0;
-        for(Node * node = tree_iter_next(&iter);
+        for(Node * node = tree_iter_init(&iter, D[color].treestore, NULL);
             node;
             node = tree_iter_next(&iter)) {
             if(node->type == NODE_TYPE_GHOST) {

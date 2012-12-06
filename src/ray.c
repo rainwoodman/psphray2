@@ -20,11 +20,11 @@ int ray_intersect_node(ray_t * ray, Node * node, double * tE, double * tL) {
 }
 
 intersect_t * ray_intersect_tree(ray_t * ray, TreeStore * store, Node * start) {
-    TreeIter iter = {store, start, NULL};
+    TreeIter iter;
     double tE, tL;
     Stack stack;
     stack_init(&stack, intersect_t);
-    Node * node = tree_iter_next(&iter);
+    Node * node = tree_iter_init(&iter, store, start);
     while(node) {
         if(!ray_intersect_node(ray, node, &tE, &tL)) {
             node = tree_iter_next_sibling(&iter);

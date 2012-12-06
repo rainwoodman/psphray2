@@ -25,12 +25,18 @@ typedef struct {
     size_t size;
 } PSystem;
 
+typedef struct {
+    PSystem * psys;
+    intptr_t i;
+} ParIter;
+
 void par_reserve(PSystem * psys, size_t size, size_t before);
 par_t * par_append(PSystem * psys, intptr_t add);
 par_t * par_prepend(PSystem * psys, intptr_t add);
 void par_destroy(PSystem * psys);
 void par_sort_by_fckey(PSystem * psys);
 intptr_t par_search_by_fckey(PSystem * psys, fckey_t * key);
+void par_iter_init(ParIter * iter, PSystem * psys);
 
 #define elsizeof(type, el) sizeof(((type *) 0)->el)
 

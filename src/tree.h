@@ -84,7 +84,7 @@ int tree_node_childpos_fckey(Node * node, fckey_t * key);
 int tree_node_contains_fckey(Node * node, fckey_t * key);
 int tree_node_contains_node(Node * node, Node * needle);
 
-void tree_iter_init(TreeIter * iter, TreeStore * store, Node * root);
+Node * tree_iter_init(TreeIter * iter, TreeStore * store, Node * root);
 Node * tree_iter_next(TreeIter * iter);
 Node * tree_iter_next_sibling(TreeIter * iter);
 
