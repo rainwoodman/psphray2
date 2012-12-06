@@ -17,14 +17,14 @@ static void cumbincount(fckey_t * POV, intptr_t * N) {
     for(int i = 0; i < NDomain - 1; i++) {
         N[i] = par_search_by_fckey(PAR_BUFFER_IN, &POV[i]);
     }
-    N[NDomain - 1] = NPARin;
+    N[NDomain - 1] = par_get_length(PAR_BUFFER_IN);
     MPI_Allreduce(MPI_IN_PLACE, N, NDomain, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
 }
 static void bincount_local(fckey_t * POV, intptr_t * N) {
     for(int i = 0; i < NDomain - 1; i++) {
         N[i] = par_search_by_fckey(PAR_BUFFER_IN, &POV[i]);
     }
-    N[NDomain - 1] = NPARin;
+    N[NDomain - 1] = par_get_length(PAR_BUFFER_IN);
     for(int i = NDomain - 1; i > 0; i--) {
         N[i] = N[i] - N[i - 1];
     }
@@ -44,6 +44,8 @@ static void find_pov(fckey_t * POV) {
     intptr_t * cumNtot = g_new0(intptr_t, NDomain);
 
     intptr_t Ntot = 0;
+    intptr_t NPARin = par_get_length(PAR_BUFFER_IN);
+
     MPI_Allreduce(&NPARin, &Ntot, 1, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
 
     for(i = 0; i < NDomain; i++) {
@@ -195,6 +197,8 @@ void domain_init() {
                 D[color].prev = (color * NTask + i - 1 + NDomain) % NDomain;
                 D[color].next = (color * NTask + i + 1) % NDomain;
                 D[color].treestore = tree_store_alloc();
+                D[color].psys = par_alloc();
+                par_init(D[color].psys, "work");
             }
         }
     }
@@ -234,23 +238,11 @@ void domain_decompose() {
 
     find_pov(POV);
 
-    /* allocate space for domains hosted locally */
+    /* segN will be used to allocate space for domains hosted locally */
     intptr_t Ntot = 0;
     bincount_local(POV, N);
     MPI_Allreduce(N, segN, NDomain, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
-
     for(int i = 0; i < NDomain; i++) { Ntot += segN[i]; }
-
-    for(int i = 0; i < NDomain; i++) {
-        if(DOMAINTABLE[i].HostTask != ThisTask) continue;
-        /* so we have a few slots before and after, 
-         * to adjusted domain boundaries against the tree */
-        int color = DOMAINTABLE[i].Color;
-        intptr_t total = Ntot * CB.MemAllocFactor / NDomain;
-        intptr_t before = (total - segN[i]) / 2;
-        par_reserve(&D[color].psys, total - before, before);
-        D[color].psys.length = segN[i];
-    }
 
 
     /* report the load per task */
@@ -300,6 +292,13 @@ void domain_decompose() {
         int *recvcounts = g_new0(int, NTask);
         int *rdispls = g_new0(int, NTask);
 
+        /* so we have a few slots before and after, 
+         * to adjusted domain boundaries against the tree */
+        intptr_t total = Ntot * CB.MemAllocFactor / NDomain;
+        intptr_t before = (total - segN[D[color].index]) / 2;
+        par_reserve(D[color].psys, total - before, before);
+        par_t * recvbuffer = par_append(D[color].psys, segN[D[color].index]);
+
         MPI_Alltoall(&sendcounts[color * NTask], 1, MPI_INT,
                  recvcounts, 1, MPI_INT, MPI_COMM_WORLD);
 
@@ -307,9 +306,9 @@ void domain_decompose() {
             rdispls[i] = (i>0)?(rdispls[i-1] + recvcounts[i-1]):0;
         }
 
-        MPI_Alltoallv(&PARin(0), &sendcounts[color * NTask], 
+        MPI_Alltoallv(par_index(PAR_BUFFER_IN, 0), &sendcounts[color * NTask], 
                     &sdispls[color * NTask], partype,
-                    D[color].psys.data, recvcounts, 
+                    recvbuffer, recvcounts, 
                     rdispls, partype,
                     MPI_COMM_WORLD);
 
@@ -326,7 +325,7 @@ void domain_decompose() {
     par_destroy(PAR_BUFFER_IN);
 
     for(int color=0; color < NColor; color++) {
-        par_sort_by_fckey(&D[color].psys);
+        par_sort_by_fckey(D[color].psys);
         inspect_par(color);
     }
 }
@@ -361,8 +360,8 @@ static void mark_complete() {
     fckey_t * behind = g_new0(fckey_t, NColor);
 
     for(int color = 0; color < NColor; color++) {
-        first[color] = PAR(color, 0).fckey;
-        last[color] = PAR(color, -1).fckey;
+        first[color] = par_index(D[color].psys, 0)->fckey;
+        last[color] = par_index(D[color].psys, -1)->fckey;
         DOMAINTABLE[D[color].index].first = first[color];
         DOMAINTABLE[D[color].index].last = last[color];
     }
@@ -371,7 +370,10 @@ static void mark_complete() {
     MPI_Type_contiguous(sizeof(DomainTable), MPI_BYTE, &table_type);
     MPI_Type_commit(&table_type);
     for(int color = 0; color < NColor; color++) {
-        MPI_Allgather(&DOMAINTABLE[D[color].index], 1, table_type,
+        /* this is to avoid writing to the same location if the source
+         * and dest are on the same hosting task, valgrind will discover this */
+        DomainTable copy = DOMAINTABLE[D[color].index];
+        MPI_Allgather(&copy, 1, table_type,
             &DOMAINTABLE[color * NTask], 1, table_type, MPI_COMM_WORLD);
     }
     MPI_Type_free(&table_type);
@@ -498,7 +500,7 @@ static void exchange_particles(Node * first, Node * last, Node * before, Node * 
                 /* send */
                 rear_sendcount = last[color].npar;
                 if(rear_sendcount) {
-                    par_t * sendbuf = par_append(&D[color].psys, -rear_sendcount);
+                    par_t * sendbuf = par_append(D[color].psys, -rear_sendcount);
                     MPI_Isend(sendbuf, rear_sendcount, partype,
                         DOMAINTABLE[D[color].next].HostTask,
                         D[color].index,
@@ -508,7 +510,7 @@ static void exchange_particles(Node * first, Node * last, Node * before, Node * 
                 /* recv */ 
                 rear_recvcount = behind[color].npar;
                 if(rear_recvcount) {
-                    par_t * recvbuf = par_append(&D[color].psys, rear_recvcount);
+                    par_t * recvbuf = par_append(D[color].psys, rear_recvcount);
                     MPI_Irecv(recvbuf, rear_recvcount, partype, 
                         DOMAINTABLE[D[color].next].HostTask,
                         D[color].next + NDomain,
@@ -521,7 +523,7 @@ static void exchange_particles(Node * first, Node * last, Node * before, Node * 
                 /* recv */
                 frnt_recvcount = before[color].npar;
                 if(frnt_recvcount) {
-                    par_t * recvbuf = par_prepend(&D[color].psys, frnt_recvcount);
+                    par_t * recvbuf = par_prepend(D[color].psys, frnt_recvcount);
                     MPI_Irecv(recvbuf, frnt_recvcount, partype, 
                         DOMAINTABLE[D[color].prev].HostTask,
                         D[color].prev,
@@ -531,7 +533,7 @@ static void exchange_particles(Node * first, Node * last, Node * before, Node * 
                 /* send */
                 frnt_sendcount = first[color].npar;
                 if(frnt_sendcount) {
-                    par_t * sendbuf = par_prepend(&D[color].psys, -frnt_sendcount);
+                    par_t * sendbuf = par_prepend(D[color].psys, -frnt_sendcount);
                     MPI_Isend(sendbuf, frnt_sendcount, partype,
                         DOMAINTABLE[D[color].prev].HostTask,
                         D[color].index + NDomain,
@@ -622,7 +624,7 @@ void domain_build_tree() {
     /* first build a temporary tree */
     intptr_t skipped = 0;
     for(int color = 0; color < NColor; color++) {
-        tree_store_init(D[color].treestore, &D[color].psys, CB.NodeSplitThresh);
+        tree_store_init(D[color].treestore, D[color].psys, CB.NodeSplitThresh);
         skipped += tree_build(D[color].treestore);
     }
     MPI_Allreduce(MPI_IN_PLACE, &skipped, 1, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
@@ -634,8 +636,8 @@ void domain_build_tree() {
 
     for(int color = 0; color < NColor; color++) {
         Node * root = tree_store_root(D[color].treestore);
-        first[color] = *tree_locate_down_fckey(D[color].treestore, root, &PAR(color, 0).fckey);
-        last[color]  = *tree_locate_down_fckey(D[color].treestore, root, &PAR(color,-1).fckey);
+        first[color] = *tree_locate_down_fckey(D[color].treestore, root, &par_index(D[color].psys, 0)->fckey);
+        last[color]  = *tree_locate_down_fckey(D[color].treestore, root, &par_index(D[color].psys,-1)->fckey);
     }
     /* exchange the boundary nodes of the trees */
     exchange_cross_boundary(sizeof(Node), first, last, before, behind);
@@ -685,7 +687,7 @@ void domain_build_tree() {
 
     /* rebuild the tree */
     for(int color=0; color < NColor; color++) {
-        tree_store_init(D[color].treestore, &D[color].psys, CB.NodeSplitThresh);
+        tree_store_init(D[color].treestore, D[color].psys, CB.NodeSplitThresh);
         tree_build(D[color].treestore);
         /* create the ghost nodes ! mark_complete will fill
          * the right host task */
@@ -699,14 +701,15 @@ void domain_build_tree() {
 
 void domain_cleanup() {
     for(int color = 0; color < NColor; color++) {
-        par_destroy(&D[color].psys);
+        par_destroy(D[color].psys);
         tree_store_destroy(D[color].treestore);
     }
 }
 
 void domain_destroy() {
     for(int color = 0; color < NColor; color++) {
-        par_destroy(&D[color].psys);
+        par_destroy(D[color].psys);
+        par_free(D[color].psys);
         tree_store_destroy(D[color].treestore);
         tree_store_free(D[color].treestore);
     }

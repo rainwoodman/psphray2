@@ -5,7 +5,7 @@
 #include "fckey.h"
 #include "par.h"
 #include "snapshot.h"
-PSystem PAR_IN = { "INPUT", 0 };
+PSystem * PAR_BUFFER_IN;
 
 static MPI_Comm ReaderComm = 0;
 
@@ -378,8 +378,11 @@ static void snapshot_read_one(int fid, SnapHeader * h) {
 }
 
 void snapshot_read(SnapHeader * h) {
+    if(PAR_BUFFER_IN == NULL) {
+        PAR_BUFFER_IN = par_alloc();
+        par_init(PAR_BUFFER_IN, "INPUT");
+    }
     size_t Ngas = snapshot_prepare(h);
-    NPARin = 0;
     par_reserve(PAR_BUFFER_IN, Ngas * 1.1, 0);
     int fid;
     for(fid = ReaderColor * Nfile / NReader;
@@ -389,7 +392,9 @@ void snapshot_read(SnapHeader * h) {
         snapshot_read_one(fid, &hh);
         MPI_Barrier(MPI_COMM_WORLD);
     }
-    for(par_t * i = &PARin(0); i < &PARin(-1); i++) {
+    ParIter iter;
+
+    for(par_t * i = par_iter_init(&iter, PAR_BUFFER_IN); i; i = par_iter_next(&iter)) {
         i->IGMmass = i->mass * (1.0 - get_cloud_fraction(i->rho * (h->a * h->a * h->a)));
     }
 }

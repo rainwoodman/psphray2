@@ -12,9 +12,6 @@ typedef struct {
 
 void snapshot_read();
 
-extern PSystem PAR_IN;
-#define PAR_BUFFER_IN &PAR_IN
+extern PSystem * PAR_BUFFER_IN;
 
-#define PARin(i) (PAR_IN.data[((signed)(i)<0)?((i)+NPARin):(i)])
-#define NPARin PAR_IN.length
 

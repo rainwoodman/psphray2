@@ -100,7 +100,7 @@ intptr_t tree_build(TreeStore * store) {
     Node * root = (Node *) tree_store_append(store, NODE_TYPE_INNER);
     root->order = FCKEY_BITS;
     root->ifirst = 0;
-    tree_build_subtree(store, root, 0, store->psys->length, &skipped);
+    tree_build_subtree(store, root, 0, par_get_length(store->psys), &skipped);
     return skipped;
 
 }
@@ -197,15 +197,13 @@ static inline Node * create_leaf_at(TreeStore * store, InnerNode * parent, int c
     (parent)->ichild[childpos] = tree_store_get_index(store, rt);
     return rt;
 }
-static inline Node * create_leaf(TreeStore * store, Node * parent, intptr_t ifirst) {
+static inline Node * create_leaf(TreeStore * store, Node * parent, par_t * i) {
     if(parent->type != NODE_TYPE_INNER) {
         parent = (Node*) node_to_inner(store, parent);
     }
-    fckey_t key = store->psys->data[ifirst].fckey;
+    fckey_t key = i->fckey;
     int pos = tree_node_childpos_fckey(parent, &key);
     Node * rt = create_leaf_at(store, (InnerNode*) parent, pos);
-    rt->ifirst = ifirst;
-    rt->npar = 0;
     return rt;
 }
 
@@ -216,17 +214,18 @@ static inline Node * create_leaf(TreeStore * store, Node * parent, intptr_t ifir
  * */
 static void tree_build_subtree(TreeStore * store, Node * subroot, intptr_t ifirst, intptr_t npar, intptr_t * skipped) {
     Node * exterior = tree_store_get_node(store, subroot->iparent);
-    intptr_t i = ifirst;
+    ParIter iter;
+    par_t * i = par_iter_init_range(&iter, store->psys, ifirst, npar);
     intptr_t SKIPPED = 0;
     Node * node = subroot;
     /* now scan over PAR, creating nodes */
-    while(i < ifirst + npar) {
+    while(i) {
         /* the current particle is no longer in current node,
          * time to close parent nodes */
         while(node !=  exterior && 
             ! tree_node_contains_fckey(node, 
-                &store->psys->data[i].fckey)) {
-            node->npar = i - node->ifirst;
+                &i->fckey)) {
+            node->npar = par_iter_last_index(&iter) - node->ifirst;
             /* here we shall try to merge the children, if 
              * doing so is intended. not merging any for now */
             node = tree_store_get_node(store, node->iparent);
@@ -234,7 +233,7 @@ static void tree_build_subtree(TreeStore * store, Node * subroot, intptr_t ifirs
         if(node == exterior) {
             /* particle is not in any nodes, skip it */
             SKIPPED ++;
-            i ++;
+            i = par_iter_next(&iter);
             continue;
         }
         /* ASSERTION: 
@@ -247,13 +246,17 @@ static void tree_build_subtree(TreeStore * store, Node * subroot, intptr_t ifirs
             /* create a child of this inner node
              * particle will be added later */
             node = create_leaf(store, node, i);
+            node->ifirst = par_iter_last_index(&iter);
+            node->npar = 0;
             goto add_particles;
         } 
         /* must be a leaf node */
         if(node->npar > store->splitthresh && node->order > 0) {
             /* rewind, split the node */
-            i = node->ifirst;
+            i = par_iter_set(&iter, node->ifirst);
             node = create_leaf(store, node, i);
+            node->ifirst = par_iter_last_index(&iter);
+            node->npar = 0;
             /* fall through add the particles */
         }
         /* must be a leaf and no split is required,
@@ -264,11 +267,11 @@ static void tree_build_subtree(TreeStore * store, Node * subroot, intptr_t ifirs
         /* TODO: figure a bigger step size: no need to scan
          * every particle  */
         node->npar +=  1;
-        i += 1;
+        i = par_iter_next(&iter);
     }
     /* close the parent nodes of the last scanned particle */
     while(node != exterior) {
-        node->npar = i - node->ifirst;
+        node->npar = par_iter_last_index(&iter) - node->ifirst;
         node = tree_store_get_node(store, node->iparent);
     }
     if(SKIPPED && skipped) {

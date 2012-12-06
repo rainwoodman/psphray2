@@ -7,20 +7,28 @@
 #include "tree.h"
 #include "domain.h"
 void inspect_par(int color) {
-    for(intptr_t i = 0; NPAR(color) && i < NPAR(color) - 1; i++) {
-        if(!fckey_cmp(&PAR(color, i).fckey, &PAR(color, i + 1).fckey) < 0) {
+    ParIter iter1;
+    ParIter iter2;
+    for(par_t * i1 = par_iter_init(&iter1, D[color].psys),
+        * i2 = (par_iter_init(&iter2, D[color].psys), par_iter_next(&iter2)); 
+                i1 && i2; 
+            i1 = par_iter_next(&iter1), i2 = par_iter_next(&iter2)) {
+        if(!fckey_cmp(&i1->fckey, &i2->fckey) < 0) {
             g_warning("%02d par unordered %ld and %ld " 
              FCKEY_FMT ", " FCKEY_FMT, 
-             ThisTask, i, i+1,
-            FCKEY_PRINT(PAR(color, i).fckey), FCKEY_PRINT(PAR(color, i+1).fckey));
+             ThisTask, par_iter_last_index(&iter1), par_iter_last_index(&iter2),
+            FCKEY_PRINT(i1->fckey), FCKEY_PRINT(i2->fckey));
         }
     }
     TAKETURNS {
+        par_t * first = par_index(D[color].psys, 0);
+        par_t * last = par_index(D[color].psys, -1);
             g_print("D%04d local Par(%ld): ID = %ld - %ld, "
               "KEY = " FCKEY_FMT " - " FCKEY_FMT "\n", 
               D[color].index,
-              NPAR(color), PAR(color, 0).id, PAR(color, -1).id,
-              FCKEY_PRINT(PAR(color, 0).fckey), FCKEY_PRINT(PAR(color, -1).fckey));
+              par_get_length(D[color].psys), 
+              first->id, last->id,
+              FCKEY_PRINT(first->fckey), FCKEY_PRINT(last->fckey));
 //              inspect_tree();
     }
 }
