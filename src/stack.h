@@ -17,10 +17,12 @@ typedef struct {
 #define stack_init(stack, type) stack_init1(stack, sizeof(type))
 
 static inline void * stack_steal(Stack * stack, size_t * len) {
+    void * rt = stack->data;
     stack->data = NULL;
     if(len) *len = stack->len;
     stack->size = 0;
     stack->len = 0;
+    return stack->data;
 }
 
 static inline void stack_init1(Stack * stack, size_t elsize) {
