@@ -11,7 +11,7 @@
 Domain * D = NULL;
 int NDomain = 0;
 int NColor = 0;
-DomainTable * DOMAINTABLE = NULL;
+DomainTable * DT = NULL;
 
 static void cumbincount(fckey_t * POV, intptr_t * N) {
     for(int i = 0; i < NDomain - 1; i++) {
@@ -125,60 +125,62 @@ static void exchange_cross_boundary(int elsize, void * first, void * last, void 
 
     MPI_Barrier(MPI_COMM_WORLD);
 
-    ROOTONLY {
-        /* shift the first nodes before sending 
-         * why? because  (assume two task and two colors)
-         *
-         * color  Task 0      Task 1
-         *  0      0            1
-         *  1      2            3
-         *  2      4            5
-         *   first(0,1)=2 -> 1=behind(1,0)
-         *   first(0,2)=4 -> 3=behind(1,1)
-         *   first(0,0)=0 -> 5=behind(1,2)
-         * */
-        void * temp = g_malloc0(elsize * NColor);
-        memcpy(temp, (char*) first + elsize, elsize * (NColor - 1));
-        memcpy((char*) temp + elsize * (NColor - 1), first, elsize);
-        first = temp;
-        /* free it later */
+    if(first && behind) {
+        ROOTONLY {
+            /* shift the first nodes before sending 
+             * why? because  (assume two task and two colors)
+             *
+             * color  Task 0      Task 1
+             *  0      0            1
+             *  1      2            3
+             *  2      4            5
+             *   first(0,1)=2 -> 1=behind(1,0)
+             *   first(0,2)=4 -> 3=behind(1,1)
+             *   first(0,0)=0 -> 5=behind(1,2)
+             * */
+            void * temp = g_malloc0(elsize * NColor);
+            memcpy(temp, (char*) first + elsize, elsize * (NColor - 1));
+            memcpy((char*) temp + elsize * (NColor - 1), first, elsize);
+            first = temp;
+            /* free it later */
+        }
+
+        MPI_Sendrecv(first, NColor, item_type, PrevTask, 1,
+            behind, NColor, item_type, NextTask, 1,
+            MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+        ROOTONLY {
+            /* because on root first array sent is a temporary storage
+             * of the shifted */
+            g_free(first);
+        }
+
+        MPI_Barrier(MPI_COMM_WORLD);
     }
+    if(last && before) {
+        MPI_Sendrecv(last, NColor, item_type, NextTask, 2,
+            before, NColor, item_type, PrevTask, 2,
+            MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-    MPI_Sendrecv(first, NColor, item_type, PrevTask, 1,
-        behind, NColor, item_type, NextTask, 1,
-        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-    ROOTONLY {
-        /* because on root first array sent is a temporary storage
-         * of the shifted */
-        g_free(first);
+        ROOTONLY {
+            /* shift the before nodes after receiving 
+             * why? because  (assume two task and three colors)
+             *
+             * color  Task 0      Task 1
+             *  0      0            1
+             *  1      2            3
+             *  2      4            5
+             *   last(1, 2)=5 -> 0=before(0,0)
+             *   last(1, 0)=1 -> 2=before(0,1)
+             *   last(1, 1)=3 -> 4=before(0,2)
+             * */
+            void * temp = g_memdup(before, elsize * NColor);
+            memcpy((char*) before + elsize, temp, elsize * (NColor - 1));
+            memcpy(before, (char*) temp + elsize * (NColor - 1), elsize);
+            g_free(temp);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
     }
-
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    MPI_Sendrecv(last, NColor, item_type, NextTask, 2,
-        before, NColor, item_type, PrevTask, 2,
-        MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-    ROOTONLY {
-        /* shift the before nodes after receiving 
-         * why? because  (assume two task and three colors)
-         *
-         * color  Task 0      Task 1
-         *  0      0            1
-         *  1      2            3
-         *  2      4            5
-         *   last(1, 2)=5 -> 0=before(0,0)
-         *   last(1, 0)=1 -> 2=before(0,1)
-         *   last(1, 1)=3 -> 4=before(0,2)
-         * */
-        void * temp = g_memdup(before, elsize * NColor);
-        memcpy((char*) before + elsize, temp, elsize * (NColor - 1));
-        memcpy(before, (char*) temp + elsize * (NColor - 1), elsize);
-        g_free(temp);
-    }
-
-    MPI_Barrier(MPI_COMM_WORLD);
     MPI_Type_free(&item_type);
 }
 
@@ -187,11 +189,11 @@ void domain_init() {
     NColor = CB.SubDomainsPerTask;
     D = g_new0(Domain, NColor);
     NDomain = NColor * NTask;
-    DOMAINTABLE = g_new0(DomainTable, NColor * NTask);
+    DT = g_new0(DomainTable, NColor * NTask);
     for(int i = 0; i < NTask; i++) {
         for(int color = 0; color < NColor; color++) {
-            DOMAINTABLE[color * NTask + i].HostTask = i;
-            DOMAINTABLE[color * NTask + i].Color = color;
+            DT[color * NTask + i].HostTask = i;
+            DT[color * NTask + i].Color = color;
             if(i == ThisTask) {
                 D[color].index = color * NTask + i;
                 D[color].prev = (color * NTask + i - 1 + NDomain) % NDomain;
@@ -326,20 +328,10 @@ void domain_decompose() {
 
     for(int color=0; color < NColor; color++) {
         par_sort_by_fckey(D[color].psys);
-        inspect_par(color);
     }
 }
 
-/*
- * Mark nodes that are completely within current Task.
- * node->complete is set to False if the another Task
- * overlaps this node.
- *
- * This is the last step of the domain decompostion.
- * called by domain_build_tree();
- * */
-
-static int node_intersects_domain(Node * node, fckey_t * first, fckey_t * last) {
+static int node_intersects_domain(Node * node, DomainTable * d) {
     fckey_t tmp;
     tmp = node->key;
     fckey_set(&tmp, 3 * node->order);
@@ -349,10 +341,87 @@ static int node_intersects_domain(Node * node, fckey_t * first, fckey_t * last) 
     g_print("xxxx " FCKEY_FMT ", " FCKEY_FMT "\n",
             FCKEY_PRINT(node->key), FCKEY_PRINT(*last));
 #endif
-    if(fckey_cmp(&tmp, first) < 0) return 0;
-    if(fckey_cmp(&node->key, last) > 0) return 0;
+    /* inclusive */
+    if(fckey_cmp(&tmp, &d->first) < 0) return 0;
+    /* exculsive */
+    if(fckey_cmp(&node->key, &d->end) >= 0) return 0;
     return 1;
 }
+static void update_ghosts() {
+    fckey_t * first = g_new0(fckey_t, NColor);
+    fckey_t * behind = g_new0(fckey_t, NColor);
+    
+    /* first will store the lower limit of fckeys 
+     * hosted by the domain, and 
+     * end will store the upper exclusive bound of fckeys,
+     * so that as a whole, all domains cover the entire space */
+    for(int color = 0; color < NColor; color++) {
+        Node * root = tree_store_root(D[color].treestore);
+        first[color] = tree_locate_down_fckey(D[color].treestore, root, 
+                        &par_index(D[color].psys, 0)->fckey)->key;
+        DT[D[color].index].first = first[color];
+    }
+    exchange_cross_boundary(sizeof(fckey_t), first, NULL, NULL, behind);
+    for(int color = 0; color < NColor; color++) {
+        DT[D[color].index].end = behind[color];
+    } 
+    g_free(first);
+    g_free(behind);
+
+    MPI_Datatype table_type;
+    MPI_Type_contiguous(sizeof(DomainTable), MPI_BYTE, &table_type);
+    MPI_Type_commit(&table_type);
+    for(int color = 0; color < NColor; color++) {
+        /* this is to avoid writing to the same location if the source
+         * and dest are on the same hosting task, valgrind will discover this */
+        DomainTable copy = DT[D[color].index];
+        MPI_Allgather(&copy, 1, table_type,
+            &DT[color * NTask], 1, table_type, MPI_COMM_WORLD);
+    }
+    MPI_Type_free(&table_type);
+    /* first domain starts 0, last domain contains upto the tail */
+    fckey_set_zero(&DT[0].first);
+    fckey_set_max(&DT[NDomain-1].end);
+
+    for(int color = 0; color < NColor; color++) {
+        Node * leaf = NULL;
+        intptr_t nleaf = 0;
+        leaf = tree_store_get_leaf_nodes(D[color].treestore, &nleaf);
+        
+        for(intptr_t i = 0; i < nleaf; i++) {
+            if(leaf[i].type != NODE_TYPE_GHOST) continue;
+            Node * node = &leaf[i];
+            int started = 0;
+            for(int j = 0; j < NDomain; j++) {
+                if(!started) {
+                    if(node_intersects_domain(node, 
+                        &DT[j])) {
+                        node->ifirst = j;
+                        started = 1;
+                        node->npar = NDomain - j;
+                        continue;
+                    }
+                } else {
+                    if(!node_intersects_domain(node, 
+                        &DT[j])) {
+                        node->npar = j - node->ifirst;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+}
+/*
+ * Mark nodes that are completely within current Task.
+ * node->complete is set to False if the another Task
+ * overlaps this node.
+ *
+ * This is the last step of the domain decompostion.
+ * called by domain_build_tree();
+ * */
+
 static void mark_complete() {
     fckey_t * first = g_new0(fckey_t, NColor);
     fckey_t * last = g_new0(fckey_t, NColor);
@@ -362,36 +431,8 @@ static void mark_complete() {
     for(int color = 0; color < NColor; color++) {
         first[color] = par_index(D[color].psys, 0)->fckey;
         last[color] = par_index(D[color].psys, -1)->fckey;
-        DOMAINTABLE[D[color].index].first = first[color];
-        DOMAINTABLE[D[color].index].last = last[color];
     }
-    /* broadcast the updated first and last keys in DOMAINTABLE */
-    MPI_Datatype table_type;
-    MPI_Type_contiguous(sizeof(DomainTable), MPI_BYTE, &table_type);
-    MPI_Type_commit(&table_type);
-    for(int color = 0; color < NColor; color++) {
-        /* this is to avoid writing to the same location if the source
-         * and dest are on the same hosting task, valgrind will discover this */
-        DomainTable copy = DOMAINTABLE[D[color].index];
-        MPI_Allgather(&copy, 1, table_type,
-            &DOMAINTABLE[color * NTask], 1, table_type, MPI_COMM_WORLD);
-    }
-    MPI_Type_free(&table_type);
-    #if 0
-    /* checking domaintable integrity*/
-    for(int i = 0; i < NDomain; i++) {
-        if(i % NTask != DOMAINTABLE[i].HostTask
-        || i / NTask != DOMAINTABLE[i].Color) {
-            g_error("%d domaintable exchange failed, %d %d %d", ThisTask, i, DOMAINTABLE[i].HostTask, DOMAINTABLE[i].Color);
-        }
-    }
-    #endif
-
-    /* now do it for the neighbours. we don't really need this do we */
-    for(int color = 0; color < NColor; color++) {
-        before[color] = DOMAINTABLE[D[color].prev].last;
-        behind[color] = DOMAINTABLE[D[color].next].first;
-    }
+    exchange_cross_boundary(sizeof(fckey_t), first, last, before, behind);
 
     for(int color = 0; color < NColor; color++) {
         TreeIter iter;
@@ -436,41 +477,10 @@ static void mark_complete() {
                 complete_count, incomplete_count);
         }
     }
-    for(int color = 0; color < NColor; color++) {
-        Node * leaf = NULL;
-        intptr_t nleaf = 0;
-        leaf = tree_store_get_leaf_nodes(D[color].treestore, &nleaf);
-        
-        for(intptr_t i = 0; i < nleaf; i++) {
-            if(leaf[i].type != NODE_TYPE_GHOST) continue;
-            Node * node = &leaf[i];
-            int started = 0;
-            for(int j = 0; j < NDomain; j++) {
-                if(!started) {
-                    if(node_intersects_domain(node, 
-                        &DOMAINTABLE[j].first, 
-                        &DOMAINTABLE[j].last)) {
-                        node->ifirst = j;
-                        started = 1;
-                        node->npar = NDomain - j;
-                        continue;
-                    }
-                } else {
-                    if(!node_intersects_domain(node, 
-                        &DOMAINTABLE[j].first, 
-                        &DOMAINTABLE[j].last)) {
-                        node->npar = j - node->ifirst;
-                        break;
-                    }
-                }
-            }
-        }
-    }
     g_free(behind);
     g_free(before);
     g_free(first);
     g_free(last);
-
 }
 
 static void exchange_particles(Node * first, Node * last, Node * before, Node * behind) {
@@ -502,7 +512,7 @@ static void exchange_particles(Node * first, Node * last, Node * before, Node * 
                 if(rear_sendcount) {
                     par_t * sendbuf = par_append(D[color].psys, -rear_sendcount);
                     MPI_Isend(sendbuf, rear_sendcount, partype,
-                        DOMAINTABLE[D[color].next].HostTask,
+                        DT[D[color].next].HostTask,
                         D[color].index,
                         MPI_COMM_WORLD, &rear_req[color]);
                 }
@@ -512,7 +522,7 @@ static void exchange_particles(Node * first, Node * last, Node * before, Node * 
                 if(rear_recvcount) {
                     par_t * recvbuf = par_append(D[color].psys, rear_recvcount);
                     MPI_Irecv(recvbuf, rear_recvcount, partype, 
-                        DOMAINTABLE[D[color].next].HostTask,
+                        DT[D[color].next].HostTask,
                         D[color].next + NDomain,
                         MPI_COMM_WORLD, &rear_req[color]);
                 }
@@ -525,7 +535,7 @@ static void exchange_particles(Node * first, Node * last, Node * before, Node * 
                 if(frnt_recvcount) {
                     par_t * recvbuf = par_prepend(D[color].psys, frnt_recvcount);
                     MPI_Irecv(recvbuf, frnt_recvcount, partype, 
-                        DOMAINTABLE[D[color].prev].HostTask,
+                        DT[D[color].prev].HostTask,
                         D[color].prev,
                         MPI_COMM_WORLD, &frnt_req[color]);
                 }
@@ -535,7 +545,7 @@ static void exchange_particles(Node * first, Node * last, Node * before, Node * 
                 if(frnt_sendcount) {
                     par_t * sendbuf = par_prepend(D[color].psys, -frnt_sendcount);
                     MPI_Isend(sendbuf, frnt_sendcount, partype,
-                        DOMAINTABLE[D[color].prev].HostTask,
+                        DT[D[color].prev].HostTask,
                         D[color].index + NDomain,
                         MPI_COMM_WORLD, &frnt_req[color]);
                 }
@@ -642,6 +652,8 @@ void domain_build_tree() {
     /* exchange the boundary nodes of the trees */
     exchange_cross_boundary(sizeof(Node), first, last, before, behind);
 
+    #if 0
+    /* print the first last before exchange */
     for(int color = 0; color < NColor; color++) {
         TAKETURNS {
             g_print("%04d "
@@ -656,6 +668,7 @@ void domain_build_tree() {
                 NODE_PRINT(behind[color]));
         }
     }
+    #endif
     for(int color = 0; color < NColor; color++) {
         /* see if the node are joint, and exchange
          * the image nodes instead.
@@ -694,9 +707,7 @@ void domain_build_tree() {
         tree_terminate(D[color].treestore);
     }
     mark_complete();
-    for(int color=0; color < NColor; color++) {
-        inspect_tree(D[color].treestore);
-    }
+    update_ghosts();
 }
 
 void domain_cleanup() {

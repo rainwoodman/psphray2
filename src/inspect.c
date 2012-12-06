@@ -32,11 +32,11 @@ void inspect_par(int color) {
 //              inspect_tree();
     }
 }
-void inspect_tree(TreeStore * store) {
+void inspect_tree(int color) {
     TreeIter iter;
     intptr_t count = 0;
-    g_print("%02d tree dump\n", ThisTask);
-    for(Node * node = tree_iter_init(&iter, store, NULL);
+    g_print("D%04d tree dump", D[color].index);
+    for(Node * node = tree_iter_init(&iter, D[color].treestore, NULL);
         node;
         node = tree_iter_next(&iter)) {
         #if 0
@@ -46,5 +46,14 @@ void inspect_tree(TreeStore * store) {
                 NODE_PRINT(node[0]));
         count ++;
     }
-    g_print("%02d total %ld\n", ThisTask, count);
+    g_print("total %ld\n", count);
+}
+
+void inspect_domain_table() {
+    for(int i = 0; i < NDomain; i++) {
+        g_print("D%04d %04d:%02d " FCKEY_FMT "-" FCKEY_FMT "\n",
+            i, DT[i].HostTask, DT[i].Color, 
+            FCKEY_PRINT(DT[i].first),
+            FCKEY_PRINT(DT[i].end));
+    }
 }

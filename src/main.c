@@ -80,6 +80,11 @@ int main(int argc, char * argv[]) {
 
         domain_decompose();
         domain_build_tree();
+        for(int color=0; color < NColor; color++) {
+            inspect_par(color);
+            inspect_tree(color);
+        }
+        inspect_domain_table();
         domain_cleanup();
     }
 

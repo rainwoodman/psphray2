@@ -15,6 +15,10 @@ typedef struct {
     float_t T;
     float_t IGMmass;
     istate_t istate;
+    struct {
+        uint64_t type : 8;
+        uint64_t offset: 56;
+    } extra;
 } par_t;
 
 typedef struct _PSystem PSystem;

@@ -162,6 +162,10 @@ void fckey_from_ipos(fckey_t * key, int64_t pos[3]) {
         fckey_fill(key, (uint64_t) pos[d] & FCKEY_MAX, d);
 }
 
+void fckey_set_zero(fckey_t * key) {
+    key->a[0] = 0;
+    key->a[1] = 0;
+}
 void fckey_set_max(fckey_t * key) {
     static int64_t pos[3];
     pos[0] = FCKEY_MAX;
