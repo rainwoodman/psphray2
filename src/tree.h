@@ -1,5 +1,10 @@
 #define NODE_TYPE_INNER 'N'
-#define NODE_TYPE_LEAF 'L'
+#define NODE_TYPE_LEAF 'L'  
+#define NODE_TYPE_GHOST 'G' 
+
+/* GHOST is a special leaf node, it stores which domain
+ * is intersecting this node from ifirst to npar */
+
 struct _InnerNode;
 struct _Node;
 
@@ -66,9 +71,12 @@ void tree_store_init(TreeStore * store, PSystem * psys, int splitthresh);
 void tree_store_destroy(TreeStore * store);
 Node * tree_store_get_node(TreeStore * store, intptr_t i);
 intptr_t tree_store_get_index(TreeStore * store, Node * node);
+Node * tree_store_get_leaf_nodes(TreeStore * store, intptr_t *nleaf);
 #define tree_store_root(store) tree_store_get_node(store, 1)
 
 intptr_t tree_build(TreeStore * store);
+void tree_terminate(TreeStore * store);
+
 Node * tree_locate_down_fckey(TreeStore * store, Node * start, fckey_t * key);
 Node * tree_locate_up_image(TreeStore * store, Node * start, Node * needle);
 

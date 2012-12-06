@@ -28,10 +28,15 @@ inline Node * tree_store_get_node(TreeStore * store, intptr_t i) {
     return NULL;
 }
 
+Node * tree_store_get_leaf_nodes(TreeStore * store, intptr_t *nleaf) {
+    if(nleaf) *nleaf = store->leaf.len;
+    return (Node*) store->leaf.data;
+}
+
 /* the reverse operation of tree_store_get_node
  * returns the index of a given node */
 inline intptr_t tree_store_get_index(TreeStore * store, Node * node) {
-    if(node->type == NODE_TYPE_LEAF) {
+    if(node->type != NODE_TYPE_INNER) {
         return -1 - (node - (Node*) store->leaf.data);
     } else {
         return 1 + ((InnerNode*)node - (InnerNode*) store->inner.data);
@@ -43,7 +48,7 @@ inline intptr_t tree_store_get_index(TreeStore * store, Node * node) {
 /* create a new node of given type, and return the pointer */
 static inline Node * tree_store_append(TreeStore * store, int type) {
     Node * rt;
-    if(type == NODE_TYPE_LEAF) {
+    if(type != NODE_TYPE_INNER) {
         rt = (Node*) stack_push(&store->leaf, Node);
     } else {
         rt = (Node*) stack_push(&store->inner, InnerNode);
@@ -57,7 +62,7 @@ static inline Node * tree_store_append(TreeStore * store, int type) {
  * references to the node shall be cleaned before this is called.
  * */
 static inline Node * tree_store_pop(TreeStore * store, Node * node) {
-     if(node->type == NODE_TYPE_LEAF) {
+     if(node->type != NODE_TYPE_INNER) {
         if(node == (Node*) stack_peek(&store->leaf, Node)) {
             return (Node*) stack_pop(&store->leaf, Node);
         } else {
@@ -157,7 +162,7 @@ Node * tree_locate_up_image(TreeStore * store, Node * node, Node * needle) {
  * of maintaining the reference in the tree from the parent
  * */
 static inline InnerNode * node_to_inner(TreeStore * store, Node * node) {
-    if(node->type == NODE_TYPE_LEAF) {
+    if(node->type != NODE_TYPE_INNER) {
         InnerNode * rt = (InnerNode*) tree_store_append(store, NODE_TYPE_INNER);
         *((Node*) rt) = *node;
         /* the copy will overwrite type */
@@ -179,20 +184,28 @@ static inline InnerNode * node_to_inner(TreeStore * store, Node * node) {
  * convert it with node_to_inner.
  * also update the parent's child list to include this newly
  * created leaf node.
+ *
+ * ifirst and npar will be junk.
+ * we also assume the parent node is a InnerNode.
  * */
+static inline Node * create_leaf_at(TreeStore * store, InnerNode * parent, int childpos) {
+    Node * rt = tree_store_append(store, NODE_TYPE_LEAF);
+    rt->order = parent->order - 1;
+    rt->key = parent->key;
+    fckey_or_with_leftshift(&rt->key, childpos, 3 * rt->order);
+    rt->iparent = tree_store_get_index(store, (Node*) parent);
+    (parent)->ichild[childpos] = tree_store_get_index(store, rt);
+    return rt;
+}
 static inline Node * create_leaf(TreeStore * store, Node * parent, intptr_t ifirst) {
-    if(parent->type == NODE_TYPE_LEAF) {
+    if(parent->type != NODE_TYPE_INNER) {
         parent = (Node*) node_to_inner(store, parent);
     }
-    Node * rt = tree_store_append(store, NODE_TYPE_LEAF);
+    fckey_t key = store->psys->data[ifirst].fckey;
+    int pos = tree_node_childpos_fckey(parent, &key);
+    Node * rt = create_leaf_at(store, (InnerNode*) parent, pos);
     rt->ifirst = ifirst;
     rt->npar = 0;
-    rt->order = parent->order - 1;
-    rt->key = store->psys->data[ifirst].fckey;
-    fckey_clear(&rt->key, 3 * rt->order);
-    rt->iparent = tree_store_get_index(store, parent);
-    int pos = tree_node_childpos_fckey(parent, &rt->key);
-    ((InnerNode*)parent)->ichild[pos] = tree_store_get_index(store, rt);
     return rt;
 }
 
@@ -268,7 +281,7 @@ Node * tree_locate_down_fckey(TreeStore * store, Node * start, fckey_t * key) {
     Node * node = tree_iter_next(&iter);
     while(node) {
         if(tree_node_contains_fckey(node, key)) {
-            if(node->type == NODE_TYPE_LEAF) {
+            if(node->type != NODE_TYPE_INNER) {
                 break;
             } else {
                 node = tree_iter_next(&iter);
@@ -334,4 +347,16 @@ Node * tree_iter_next(TreeIter * iter) {
 }
 Node * tree_iter_next_sibling(TreeIter * iter) {
     return tree_iter_real_next(iter, TRUE);
+}
+void tree_terminate(TreeStore * store) {
+    for(intptr_t i = 0; i < store->inner.len; i++) {
+        InnerNode * parent = (InnerNode*) tree_store_get_node(store, i + 1);
+        for(int j = 0; j < 8; j++) {
+            if(parent->ichild[j] != 0) continue;
+                Node * node = create_leaf_at(store, parent, j);
+                node->ifirst = 0;
+                node->npar = 0;
+                node->type = NODE_TYPE_GHOST;
+        }
+    }
 }

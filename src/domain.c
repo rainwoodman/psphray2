@@ -340,6 +340,20 @@ void domain_decompose() {
  * called by domain_build_tree();
  * */
 
+static int node_intersects_domain(Node * node, fckey_t * first, fckey_t * last) {
+    fckey_t tmp;
+    tmp = node->key;
+    fckey_set(&tmp, 3 * node->order);
+#if 0
+    g_print("xxxx " FCKEY_FMT ", " FCKEY_FMT " - ",
+            FCKEY_PRINT(tmp), FCKEY_PRINT(*first));
+    g_print("xxxx " FCKEY_FMT ", " FCKEY_FMT "\n",
+            FCKEY_PRINT(node->key), FCKEY_PRINT(*last));
+#endif
+    if(fckey_cmp(&tmp, first) < 0) return 0;
+    if(fckey_cmp(&node->key, last) > 0) return 0;
+    return 1;
+}
 static void mark_complete() {
     fckey_t * first = g_new0(fckey_t, NColor);
     fckey_t * last = g_new0(fckey_t, NColor);
@@ -349,9 +363,33 @@ static void mark_complete() {
     for(int color = 0; color < NColor; color++) {
         first[color] = PAR(color, 0).fckey;
         last[color] = PAR(color, -1).fckey;
+        DOMAINTABLE[D[color].index].first = first[color];
+        DOMAINTABLE[D[color].index].last = last[color];
     }
+    /* broadcast the updated first and last keys in DOMAINTABLE */
+    MPI_Datatype table_type;
+    MPI_Type_contiguous(sizeof(DomainTable), MPI_BYTE, &table_type);
+    MPI_Type_commit(&table_type);
+    for(int color = 0; color < NColor; color++) {
+        MPI_Allgather(&DOMAINTABLE[D[color].index], 1, table_type,
+            &DOMAINTABLE[color * NTask], 1, table_type, MPI_COMM_WORLD);
+    }
+    MPI_Type_free(&table_type);
+    #if 0
+    /* checking domaintable integrity*/
+    for(int i = 0; i < NDomain; i++) {
+        if(i % NTask != DOMAINTABLE[i].HostTask
+        || i / NTask != DOMAINTABLE[i].Color) {
+            g_error("%d domaintable exchange failed, %d %d %d", ThisTask, i, DOMAINTABLE[i].HostTask, DOMAINTABLE[i].Color);
+        }
+    }
+    #endif
 
-    exchange_cross_boundary(sizeof(fckey_t), first, last, before, behind);
+    /* now do it for the neighbours. we don't really need this do we */
+    for(int color = 0; color < NColor; color++) {
+        before[color] = DOMAINTABLE[D[color].prev].last;
+        behind[color] = DOMAINTABLE[D[color].next].first;
+    }
 
     for(int color = 0; color < NColor; color++) {
         TreeIter iter = {D[color].treestore, NULL, NULL};
@@ -360,6 +398,11 @@ static void mark_complete() {
         for(Node * node = tree_iter_next(&iter);
             node;
             node = tree_iter_next(&iter)) {
+            if(node->type == NODE_TYPE_GHOST) {
+                node->complete = FALSE;
+                incomplete_count ++;
+                continue;
+            }
             if(D[color].index != 0 && 
                 tree_node_contains_fckey(node, &before[color])) {
                 node->complete = FALSE;
@@ -389,6 +432,36 @@ static void mark_complete() {
             g_print("%04d complete %ld incomplete %ld\n", 
                 D[color].index,
                 complete_count, incomplete_count);
+        }
+    }
+    for(int color = 0; color < NColor; color++) {
+        Node * leaf = NULL;
+        intptr_t nleaf = 0;
+        leaf = tree_store_get_leaf_nodes(D[color].treestore, &nleaf);
+        
+        for(intptr_t i = 0; i < nleaf; i++) {
+            if(leaf[i].type != NODE_TYPE_GHOST) continue;
+            Node * node = &leaf[i];
+            int started = 0;
+            for(int j = 0; j < NDomain; j++) {
+                if(!started) {
+                    if(node_intersects_domain(node, 
+                        &DOMAINTABLE[j].first, 
+                        &DOMAINTABLE[j].last)) {
+                        node->ifirst = j;
+                        started = 1;
+                        node->npar = NDomain - j;
+                        continue;
+                    }
+                } else {
+                    if(!node_intersects_domain(node, 
+                        &DOMAINTABLE[j].first, 
+                        &DOMAINTABLE[j].last)) {
+                        node->npar = j - node->ifirst;
+                        break;
+                    }
+                }
+            }
         }
     }
     g_free(behind);
@@ -614,9 +687,14 @@ void domain_build_tree() {
     for(int color=0; color < NColor; color++) {
         tree_store_init(D[color].treestore, &D[color].psys, CB.NodeSplitThresh);
         tree_build(D[color].treestore);
-        inspect_tree(D[color].treestore);
+        /* create the ghost nodes ! mark_complete will fill
+         * the right host task */
+        tree_terminate(D[color].treestore);
     }
     mark_complete();
+    for(int color=0; color < NColor; color++) {
+        inspect_tree(D[color].treestore);
+    }
 }
 
 void domain_cleanup() {

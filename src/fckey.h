@@ -18,6 +18,7 @@ int _fckey_print_width(fckey_t key, int part, int digits);
 
 int fckey_cmp(fckey_t * key1, fckey_t * key2);
 void fckey_clear(fckey_t * key, int bits);
+void fckey_set(fckey_t * key, int bits);
 void fckey_to_ipos(fckey_t * key, int64_t pos[3]);
 void fckey_from_ipos(fckey_t * key, int64_t pos[3]);
 void fckey_center(fckey_t * center, fckey_t * key1, fckey_t * key2);
@@ -25,3 +26,4 @@ void fckey_set_max(fckey_t * key);
 int fckey_is_zero(fckey_t * key);
 void fckey_xor(fckey_t * result, fckey_t * key1, fckey_t * key2);
 void fckey_rightshift(fckey_t * key, int offset);
+void fckey_or_with_leftshift(fckey_t * key, uint32_t value, int t);

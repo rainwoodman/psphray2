@@ -9,6 +9,9 @@ typedef struct _Domain {
 typedef struct {
     int HostTask;
     int Color; /* index on the HostTask */
+    /* first fckey and last fckey on the curve */
+    fckey_t first;
+    fckey_t last;
 } DomainTable;
 
 void domain_init();

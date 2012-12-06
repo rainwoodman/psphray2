@@ -42,7 +42,8 @@ int _fckey_print_width(fckey_t key, int part, int digits) {
 }
 
 
-static inline void fckey_or_with_leftshift(fckey_t * key, uint32_t value, int t) {
+/* t is in bits */
+void fckey_or_with_leftshift(fckey_t * key, uint32_t value, int t) {
     if(t < 64) {
     /* low is affected */
        key->a[0] |= (uint64_t)value << t;
@@ -107,6 +108,17 @@ void fckey_clear(fckey_t * key, int bits) {
         key->a[1] = (key->a[1] >> bits) << bits;
     } else {
         key->a[0] = (key->a[0] >> bits) << bits;
+    }
+}
+void fckey_set(fckey_t * key, int bits) {
+    if(bits >= 64) {
+        key->a[0] = -1L;
+        bits -= 64;
+        key->a[1] = (key->a[1] >> bits) << bits;
+        key->a[1] |= (1L << bits) - 1;
+    } else {
+        key->a[0] = (key->a[0] >> bits) << bits;
+        key->a[0] |= (1L << bits) - 1;
     }
 }
 
