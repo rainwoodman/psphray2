@@ -66,14 +66,16 @@ static inline Node * tree_store_pop(TreeStore * store, Node * node) {
         if(node == (Node*) stack_peek(&store->leaf, Node)) {
             return (Node*) stack_pop(&store->leaf, Node);
         } else {
-            g_critical("trying to pop a non top leaf node");
+//            g_critical("trying to pop a non top leaf node");
+            node->status = NODE_FREE;
             return NULL;
         }
     } else {
         if(node == (Node*) stack_peek(&store->inner, InnerNode)) {
             return (Node*) stack_pop(&store->inner, InnerNode);
         } else {
-            g_critical("trying to pop a non top inner node");
+//           g_critical("trying to pop a non top inner node");
+            node->status = NODE_FREE;
             return NULL;
         }
     }
@@ -118,6 +120,9 @@ int tree_node_childpos_fckey(Node * node, fckey_t * key) {
      * the octrant(0-7) that contains the key */
     fckey_t tmp;
     fckey_xor(&tmp, &node->key, key);
+    if(node->order == 0) {
+        g_error("node->order shall be positive");
+    }
     fckey_rightshift(&tmp, 3 * (node->order - 1));
     if(tmp.a[1] == 0 && tmp.a[0] < 8) {
         return tmp.a[0];
@@ -131,7 +136,11 @@ int tree_node_childpos_fckey(Node * node, fckey_t * key) {
  * 0 if not.
  * */
 int tree_node_contains_fckey(Node * node, fckey_t * key) {
-    return tree_node_childpos_fckey(node, key) != -1;
+    if(node->order > 0) {
+        return tree_node_childpos_fckey(node, key) != -1;
+    } else {
+        return fckey_cmp(&node->key, key) == 0;
+    }
 }
 
 /* test if needle is a subnode of node 
@@ -207,6 +216,22 @@ static inline Node * create_leaf(TreeStore * store, Node * parent, par_t * i) {
     return rt;
 }
 
+Node * tree_split_empty_leaf(TreeStore * store, Node * parent) {
+    if(parent->npar != 0) {
+        g_error("only split empty leaf nodes!");
+    }
+    if(parent->type != NODE_TYPE_INNER) {
+        parent = (Node*) node_to_inner(store, parent);
+    }
+    int pos;
+    for(pos = 0; pos < 8; pos++) {
+        Node * child = create_leaf_at(store, (InnerNode*) parent, pos);
+        child->ifirst = parent->ifirst;
+        child->npar = 0;
+    }
+    return parent;
+}
+
 /* build a tree as the subtree of subroot, with particles
  * first to first + npar.
  * returns the number of particles that are out of the box
@@ -225,7 +250,7 @@ static void tree_build_subtree(TreeStore * store, Node * subroot, intptr_t ifirs
         while(node !=  exterior && 
             ! tree_node_contains_fckey(node, 
                 &i->fckey)) {
-            node->npar = par_iter_last_index(&iter) - node->ifirst;
+            node->npar = par_iter_last_index(&iter) - node->ifirst + 1;
             /* here we shall try to merge the children, if 
              * doing so is intended. not merging any for now */
             node = tree_store_get_node(store, node->iparent);
@@ -271,7 +296,7 @@ static void tree_build_subtree(TreeStore * store, Node * subroot, intptr_t ifirs
     }
     /* close the parent nodes of the last scanned particle */
     while(node != exterior) {
-        node->npar = par_iter_last_index(&iter) - node->ifirst;
+        node->npar = par_iter_last_index(&iter) - node->ifirst + 1;
         node = tree_store_get_node(store, node->iparent);
     }
     if(SKIPPED && skipped) {
@@ -296,18 +321,22 @@ Node * tree_locate_down_fckey(TreeStore * store, Node * start, fckey_t * key) {
     return node;
 }
 
-/* create ghost nodes that terminate the dangling children.*/
+/* create leaf nodes that terminate the dangling children.*/
 void tree_terminate(TreeStore * store) {
     for(intptr_t i = 0; i < store->inner.len; i++) {
         InnerNode * parent = (InnerNode*) tree_store_get_node(store, i + 1);
         for(int j = 0; j < 8; j++) {
             if(parent->ichild[j] != 0) continue;
             Node * node = create_leaf_at(store, parent, j);
-            node->ifirst = 0;
+            node->ifirst = parent->ifirst;
             node->npar = 0;
-            node->type = NODE_TYPE_GHOST;
         }
     }
+}
+
+/* call, if eg, as we go the current node has been splited */
+void tree_iter_update_current(TreeIter * iter, Node * node) {
+    iter->current = node;
 }
 
 static Node * tree_iter_real_next(TreeIter * iter, int skip_children) {

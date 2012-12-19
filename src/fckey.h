@@ -28,3 +28,4 @@ void fckey_set_zero(fckey_t * key);
 void fckey_xor(fckey_t * result, fckey_t * key1, fckey_t * key2);
 void fckey_rightshift(fckey_t * key, int offset);
 void fckey_or_with_leftshift(fckey_t * key, uint32_t value, int t);
+void fckey_minus_one(fckey_t * key);

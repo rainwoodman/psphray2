@@ -20,22 +20,19 @@ void inspect_par(int color) {
             FCKEY_PRINT(i1->fckey), FCKEY_PRINT(i2->fckey));
         }
     }
-    TAKETURNS {
-        par_t * first = par_index(D[color].psys, 0);
-        par_t * last = par_index(D[color].psys, -1);
-            g_print("D%04d local Par(%ld): ID = %ld - %ld, "
-              "KEY = " FCKEY_FMT " - " FCKEY_FMT "\n", 
-              D[color].index,
-              par_get_length(D[color].psys), 
-              first->id, last->id,
-              FCKEY_PRINT(first->fckey), FCKEY_PRINT(last->fckey));
-//              inspect_tree();
-    }
+    par_t * first = par_index(D[color].psys, 0);
+    par_t * last = par_index(D[color].psys, -1);
+        g_print("D%04d local Par(%ld): ID = %ld - %ld, "
+          "KEY = " FCKEY_FMT " - " FCKEY_FMT "\n", 
+          D[color].index,
+          par_get_length(D[color].psys), 
+          first->id, last->id,
+          FCKEY_PRINT(first->fckey), FCKEY_PRINT(last->fckey));
 }
 void inspect_tree(int color) {
     TreeIter iter;
     intptr_t count = 0;
-    g_print("D%04d tree dump", D[color].index);
+    g_print("D%04d tree dump PSYS=%ld\n", D[color].index, par_get_length(D[color].psys));
     for(Node * node = tree_iter_init(&iter, D[color].treestore, NULL);
         node;
         node = tree_iter_next(&iter)) {

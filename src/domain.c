@@ -347,6 +347,38 @@ static int node_intersects_domain(Node * node, DomainTable * d) {
     if(fckey_cmp(&node->key, &d->end) >= 0) return 0;
     return 1;
 }
+/* return -1 if multiple intersections are found 
+ * otherwise return the only intersection; */
+static int node_intersects_domains(Node * node) {
+    for(int j = 0; j < NDomain; j++) {
+        if (!node_intersects_domain(node, &DT[j])) continue;
+        if(j < NDomain - 1 &&
+            node_intersects_domain(node, &DT[j + 1])) {
+            return -1;
+        }
+        return j;
+    }
+    g_error("node not intersecting any domains");
+}
+
+/*
+ * Mark nodes that are completely within current Task.
+ * node->complete is set to False if the another Task
+ * overlaps this node.
+ *
+ * This is the last step of the domain decompostion.
+ * called by domain_build_tree();
+ *
+ * if a leaf node is on another domain, then it will
+ * be marked as NODE_REMOTE, and ifirst will be the
+ * to the domain index.
+ *
+ * if a leaf node crosses several domains, it is divided.
+ *
+ * if a inner node contains first/last of next/prev domain,
+ * it is marked NODE_INCOMPLETE, as it contains remote nodes.
+ * */
+
 static void update_ghosts() {
     fckey_t * first = g_new0(fckey_t, NColor);
     fckey_t * behind = g_new0(fckey_t, NColor);
@@ -382,58 +414,49 @@ static void update_ghosts() {
     /* first domain starts 0, last domain contains upto the tail */
     fckey_set_zero(&DT[0].first);
     fckey_set_max(&DT[NDomain-1].end);
-
     for(int color = 0; color < NColor; color++) {
-        Node * leaf = NULL;
-        intptr_t nleaf = 0;
-        leaf = tree_store_get_leaf_nodes(D[color].treestore, &nleaf);
-        
-        for(intptr_t i = 0; i < nleaf; i++) {
-            if(leaf[i].type != NODE_TYPE_GHOST) continue;
-            Node * node = &leaf[i];
-            int started = 0;
-            for(int j = 0; j < NDomain; j++) {
-                if(!started) {
-                    if(node_intersects_domain(node, 
-                        &DT[j])) {
-                        node->ifirst = j;
-                        started = 1;
-                        node->npar = NDomain - j;
-                        continue;
-                    }
+        TreeIter iter;
+        for(Node * node = tree_iter_init(&iter, 
+                D[color].treestore, NULL); 
+                node; 
+                node = tree_iter_next(&iter)) {
+            if(node->type == NODE_TYPE_INNER) {
+                fckey_t prevlast = DT[D[color].prev].end;
+                fckey_minus_one(&prevlast);
+                if(tree_node_contains_fckey(node, &prevlast) 
+                || tree_node_contains_fckey(node, 
+                        &DT[D[color].next].first)) {
+                    node->status = NODE_INCOMPLETE;
                 } else {
-                    if(!node_intersects_domain(node, 
-                        &DT[j])) {
-                        node->npar = j - node->ifirst;
-                        break;
-                    }
+                    node->status = NODE_LOCAL;
                 }
+                continue;
+            }
+            /* if there is particle in a leaf, it has to be local*/
+            if(node->npar > 0) {
+                node->status = NODE_LOCAL;
+                continue;
+            }
+            int domain = node_intersects_domains(node);
+            if(domain == -1) {
+                /* need to split this, more than 1 domain intersects
+                 * the node */
+                g_print("--- D%04d -----" NODE_FMT "\n", 
+                    D[color].index, NODE_PRINT(node[0]));
+                node = tree_split_empty_leaf(D[color].treestore, node);
+                node->status = NODE_INCOMPLETE;
+                tree_iter_update_current(&iter, node);
+                continue;
+            }
+            if(domain != D[color].index) {
+                node->ifirst = domain;
+                node->npar = 1;
+                node->status = NODE_REMOTE;
+            } else {
+                node->status = NODE_LOCAL;
             }
         }
     }
-
-}
-/*
- * Mark nodes that are completely within current Task.
- * node->complete is set to False if the another Task
- * overlaps this node.
- *
- * This is the last step of the domain decompostion.
- * called by domain_build_tree();
- * */
-
-static void mark_complete() {
-    fckey_t * first = g_new0(fckey_t, NColor);
-    fckey_t * last = g_new0(fckey_t, NColor);
-    fckey_t * before = g_new0(fckey_t, NColor);
-    fckey_t * behind = g_new0(fckey_t, NColor);
-
-    for(int color = 0; color < NColor; color++) {
-        first[color] = par_index(D[color].psys, 0)->fckey;
-        last[color] = par_index(D[color].psys, -1)->fckey;
-    }
-    exchange_cross_boundary(sizeof(fckey_t), first, last, before, behind);
-
     for(int color = 0; color < NColor; color++) {
         TreeIter iter;
         intptr_t complete_count = 0;
@@ -441,46 +464,10 @@ static void mark_complete() {
         for(Node * node = tree_iter_init(&iter, D[color].treestore, NULL);
             node;
             node = tree_iter_next(&iter)) {
-            if(node->type == NODE_TYPE_GHOST) {
-                node->complete = FALSE;
-                incomplete_count ++;
-                continue;
-            }
-            if(D[color].index != 0 && 
-                tree_node_contains_fckey(node, &before[color])) {
-                node->complete = FALSE;
-                incomplete_count ++;
-              #if 1
-                g_print("%04d incomplete" NODE_FMT ", key" FCKEY_FMT "\n",
-                    D[color].index,
-                    NODE_PRINT(node[0]), FCKEY_PRINT(before[0]));
-              #endif
-                continue;
-            }
-            if(D[color].index != NDomain -1 &&
-                tree_node_contains_fckey(node, &behind[color])) {
-                node->complete = FALSE;
-                incomplete_count ++;
-              #if 1
-                g_print("%04d incomplete" NODE_FMT ", key" FCKEY_FMT "\n",
-                    D[color].index,
-                    NODE_PRINT(node[0]), FCKEY_PRINT(behind[0]));
-              #endif
-                continue;
-            }
-            node->complete = TRUE;
-            complete_count ++;
-        }
-        TAKETURNS {
-            g_print("%04d complete %ld incomplete %ld\n", 
-                D[color].index,
-                complete_count, incomplete_count);
+
         }
     }
-    g_free(behind);
-    g_free(before);
-    g_free(first);
-    g_free(last);
+
 }
 
 static void exchange_particles(Node * first, Node * last, Node * before, Node * behind) {
@@ -551,10 +538,13 @@ static void exchange_particles(Node * first, Node * last, Node * before, Node * 
                 }
             }
         }
+        if(frnt_sendcount + rear_sendcount > par_get_length(D[color].psys)) {
+            g_error("domain is too small !");
+        }
         exchange += frnt_sendcount + rear_sendcount + frnt_recvcount + rear_recvcount;
         TAKETURNS {
             if(frnt_sendcount + rear_sendcount + frnt_recvcount + rear_recvcount > 0) {
-                g_print("%02d", ThisTask);
+                g_print("COMMUNICATION: %02d", ThisTask);
                 if(frnt_sendcount)
                 g_print(" %04df -> %04dr(% 5d)", D[color].index, D[color].prev, frnt_sendcount);
                 if(frnt_recvcount)
@@ -647,6 +637,17 @@ void domain_build_tree() {
     for(int color = 0; color < NColor; color++) {
         Node * root = tree_store_root(D[color].treestore);
         first[color] = *tree_locate_down_fckey(D[color].treestore, root, &par_index(D[color].psys, 0)->fckey);
+        #if 0
+        /* see why look up returned NULL */
+        if(!tree_locate_down_fckey(D[color].treestore, root, &par_index(D[color].psys,-1)->fckey)) {
+            inspect_tree(color);
+            g_error("D%04d %ld" NODE_FMT " " FCKEY_FMT " ",
+                D[color].index,
+                par_get_length(D[color].psys),
+                NODE_PRINT(root[0]), 
+                FCKEY_PRINT(par_index(D[color].psys, -1)->fckey));
+        }
+        #endif 
         last[color]  = *tree_locate_down_fckey(D[color].treestore, root, &par_index(D[color].psys,-1)->fckey);
     }
     /* exchange the boundary nodes of the trees */
@@ -702,11 +703,10 @@ void domain_build_tree() {
     for(int color=0; color < NColor; color++) {
         tree_store_init(D[color].treestore, D[color].psys, CB.NodeSplitThresh);
         tree_build(D[color].treestore);
-        /* create the ghost nodes ! mark_complete will fill
-         * the right host task */
+        /* create the leaf nodes! */
         tree_terminate(D[color].treestore);
     }
-    mark_complete();
+    /**/
     update_ghosts();
 }
 

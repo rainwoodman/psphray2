@@ -1,4 +1,5 @@
 #include <glib.h>
+#include <stdio.h>
 #include <mpi.h>
 
 #include "commonblock.h"
@@ -15,7 +16,10 @@ void abort() {
     /* shut up the compiler */
     exit(1);
 }
-
+void print_handler(const gchar * string) {
+    fputs(string, stdout);
+    fflush(stdout);
+}
 static char ** paramfilename = NULL;
 static GOptionEntry entries[] =
 {
@@ -41,6 +45,7 @@ int main(int argc, char * argv[]) {
 
     MPI_Init(&argc, &argv);
     g_log_set_default_handler(log_handler, NULL);
+    g_set_print_handler(print_handler);
     common_block_bootstrap();
 
     ROOTONLY {
@@ -81,10 +86,14 @@ int main(int argc, char * argv[]) {
         domain_decompose();
         domain_build_tree();
         for(int color=0; color < NColor; color++) {
-            inspect_par(color);
-            inspect_tree(color);
+            TAKETURNS {
+                inspect_par(color);
+                inspect_tree(color);
+            }
         }
-        inspect_domain_table();
+        ROOTONLY {
+            inspect_domain_table();
+        }
         domain_cleanup();
     }
 

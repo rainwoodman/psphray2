@@ -1,8 +1,7 @@
 #include <stdlib.h>
 #include <stdint.h>
-#include <glib.h>
 #include "fckey.h"
-unsigned int FCKEY_BITS = 20;
+unsigned int FCKEY_BITS = 40;
 
 uint64_t _fckey_print_value(fckey_t key, int part, int rightshiftdigits) {
     fckey_rightshift(&key, rightshiftdigits * 3);
@@ -10,9 +9,9 @@ uint64_t _fckey_print_value(fckey_t key, int part, int rightshiftdigits) {
         case 0:
             return key.a[0] & 077777777777; /* 33 bits */
         case 1:
-            return ((key.a[0] >> 33) & 077777777777) + ((key.a[1] & 1) << 33); /* 30 bits */
+            return ((key.a[0] >> 33) & 077777777777) + ((key.a[1] & 3) << 31); /* 31 + 2 = 33 bits */
         case 2:
-            return (key.a[1] >> 1);
+            return (key.a[1] >> 2);
     }
     abort();
 }
@@ -20,13 +19,13 @@ uint64_t _fckey_print_value(fckey_t key, int part, int rightshiftdigits) {
 int _fckey_print_width(fckey_t key, int part, int digits) {
     switch(part) {
         case 2:
-            if (digits > 21) 
-                return digits - 21;
+            if (digits > 22) 
+                return digits - 22;
             else
                 return 0;
         case 1:
             if(digits > 11) {
-                if(digits < 21)
+                if(digits < 22)
                     return digits - 11;
                 else
                     return 10;
@@ -166,6 +165,14 @@ void fckey_set_zero(fckey_t * key) {
     key->a[0] = 0;
     key->a[1] = 0;
 }
+void fckey_minus_one(fckey_t * key) {
+    if(key->a[0] == 0) {
+        key->a[0] = -1;
+        key->a[1] --;
+    } else {
+        key->a[0] --;
+    }
+}
 void fckey_set_max(fckey_t * key) {
     static int64_t pos[3];
     pos[0] = FCKEY_MAX;
@@ -198,11 +205,18 @@ void test2(int bits) {
     printf( "%d " FMT16  FMT16 "\n", bits, 
             key1.a[1], key1.a[0], center.a[1], center.a[0]);
 }
+void test3() {
+    fckey_t key1;
+    fckey_set_max(&key1);
+    printf( FCKEY_FMT "\n", FCKEY_PRINT(key1));
+    printf( "%lo %lo\n", key1.a[0], key1.a[1]);
+    key1.a[0] = 0345670123456701234567L;
+    key1.a[1] = 01234567012345670123456712L << 2;
+    printf( FCKEY_FMT "\n", FCKEY_PRINT(key1));
+}
 void main() {
     int i = 0;
-    for(i = 0; i < 128; i++) {
-        test2(i);
-    }
+    test3(i);
 }
 #endif
 

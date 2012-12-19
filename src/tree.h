@@ -1,6 +1,10 @@
-#define NODE_TYPE_INNER 'N'
-#define NODE_TYPE_LEAF 'L'  
-#define NODE_TYPE_GHOST 'G' 
+#define NODE_TYPE_INNER '>'
+#define NODE_TYPE_LEAF '+'
+
+#define NODE_FREE 'X'
+#define NODE_LOCAL 'L'
+#define NODE_INCOMPLETE 'I'
+#define NODE_REMOTE 'R'
 
 /* GHOST is a special leaf node, it stores which domain
  * is intersecting this node from ifirst to npar */
@@ -11,7 +15,7 @@ struct _Node;
 #define NODE_COMMON \
     char type; \
     char order; \
-    char complete; \
+    char status; \
     char unused; \
     int32_t iparent; \
     int32_t npar;  \
@@ -32,7 +36,7 @@ typedef struct _TreeStore TreeStore;
 
 #define NODE_FMT \
     "{ " \
-    "%c%s " \
+    "%c%c " \
     FCKEY_FMT "/" \
     "%d " \
     "fst: " "%d " \
@@ -52,7 +56,7 @@ static inline int tree_node_nchildren(Node * node) {
 }
 #define NODE_PRINT(x) \
     (x).type, \
-    (x).complete?"C":"I", \
+    (x).status?(x).status:'?', \
     FCKEY_PRINT_PREFIX(x.key, FCKEY_BITS - (x).order), \
     (x).order, \
     (x).ifirst, \
@@ -71,10 +75,11 @@ void tree_store_init(TreeStore * store, PSystem * psys, int splitthresh);
 void tree_store_destroy(TreeStore * store);
 Node * tree_store_get_node(TreeStore * store, intptr_t i);
 intptr_t tree_store_get_index(TreeStore * store, Node * node);
-Node * tree_store_get_leaf_nodes(TreeStore * store, intptr_t *nleaf);
+
 #define tree_store_root(store) tree_store_get_node(store, 1)
 
 intptr_t tree_build(TreeStore * store);
+Node * tree_split_empty_leaf(TreeStore * store, Node * parent);
 void tree_terminate(TreeStore * store);
 
 Node * tree_locate_down_fckey(TreeStore * store, Node * start, fckey_t * key);
@@ -86,5 +91,6 @@ int tree_node_contains_node(Node * node, Node * needle);
 
 Node * tree_iter_init(TreeIter * iter, TreeStore * store, Node * root);
 Node * tree_iter_next(TreeIter * iter);
+void tree_iter_update_current(TreeIter * iter, Node * node);
 Node * tree_iter_next_sibling(TreeIter * iter);
 

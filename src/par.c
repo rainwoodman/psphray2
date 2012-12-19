@@ -12,6 +12,8 @@ struct _PSystem {
     size_t size;
 };
 
+
+
 static intptr_t searchsorted (void * key, void * array, 
       size_t len, size_t elsize, GCompareFunc compare);
 
@@ -127,13 +129,11 @@ static intptr_t searchsorted (void * target, void * array,
         cmpval = compare(target, data + (elsize * middle));
         if (cmpval > 0) {
             left = middle + 1;
-        } else if (cmpval < 0) {
-            right = middle - 1;
+            /* left element is always less than target*/
         } else {
-            return middle;
+            right = middle;
         }
     }
-
     return left;
 }
 
