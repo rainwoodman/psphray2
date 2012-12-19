@@ -1,6 +1,6 @@
 #include <glib.h>
 #include <math.h>
-#include <mpi.h>
+#include "mpiu.h"
 #include <stdio.h>
 #include "commonblock.h"
 #include "gadgetall.h"

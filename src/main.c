@@ -1,6 +1,6 @@
 #include <glib.h>
 #include <stdio.h>
-#include <mpi.h>
+#include "mpiu.h"
 
 #include "commonblock.h"
 #include "fckey.h"
@@ -9,7 +9,6 @@
 #include "snapshot.h"
 #include "paramfile.h"
 #include "domain.h"
-
 
 void abort() {
     MPI_Abort(MPI_COMM_WORLD, 1);
@@ -46,7 +45,7 @@ int main(int argc, char * argv[]) {
     MPI_Init(&argc, &argv);
     g_log_set_default_handler(log_handler, NULL);
     g_set_print_handler(print_handler);
-    common_block_bootstrap();
+    mpiu_init();
 
     ROOTONLY {
         GError * error = NULL;

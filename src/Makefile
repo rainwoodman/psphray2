@@ -6,6 +6,7 @@ CC = mpiicc -g
 GADGETSOURCES = gadget/gadgetall.c gadget/cooling.c gadget/sfr_eff.c
 SOURCES = \
     main.c \
+    mpiu.c \
     commonblock.c \
     fckey.c \
     par.c \

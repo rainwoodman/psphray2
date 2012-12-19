@@ -1,5 +1,5 @@
 #include <glib.h>
-#include <mpi.h>
+#include "mpiu.h"
 #include <string.h>
 #include "commonblock.h"
 #include "fckey.h"

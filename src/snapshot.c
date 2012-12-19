@@ -1,5 +1,5 @@
 #include <glib.h>
-#include <mpi.h>
+#include "mpiu.h"
 
 #include "commonblock.h"
 #include "fckey.h"
@@ -68,7 +68,7 @@ static void snapshot_read_header(int fid, SnapHeader * h) {
         g_error("cannot open %s:%s", filename, error->message);
     } g_free(filename);
     char * buffer = g_mapped_file_get_contents(file);
-    struct {
+    struct _ {
         unsigned int N[6];
         double mass[6];
         double time;
@@ -90,7 +90,7 @@ static void snapshot_read_header(int fid, SnapHeader * h) {
         int flag_ic_info;
         int flag_lpt_scalingfactor;
         int unused[12];
-    } * fh = buffer + 4;
+    } * fh = (struct _ * ) (buffer + 4);
 
     for(int i = 0; i < 6; i++) {
         h[0].N[i]= fh[0].N[i];

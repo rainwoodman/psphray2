@@ -59,16 +59,5 @@ typedef struct {
 } CommonBlock;
 
 extern CommonBlock CB;
-#ifdef MPI_VERSION
-extern int ThisTask;
-extern int NTask;
-extern int PrevTask;
-extern int NextTask;
 void common_block_sync();
-void common_block_bootstrap();
 
-#define ROOTONLY if(ThisTask == 0)
-#define TAKETURNS \
-    for(int __i__ = 0; MPI_Barrier(MPI_COMM_WORLD), __i__ < NTask; \
-        MPI_Barrier(MPI_COMM_WORLD), __i__++) if(ThisTask == __i__)
-#endif
