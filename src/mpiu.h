@@ -7,3 +7,5 @@ extern int NextTask;
 #define TAKETURNS \
     for(int __i__ = 0; MPI_Barrier(MPI_COMM_WORLD), __i__ < NTask; \
         MPI_Barrier(MPI_COMM_WORLD), __i__++) if(ThisTask == __i__)
+void mpiu_init();
+void mpiu_bcast_string(char ** string);

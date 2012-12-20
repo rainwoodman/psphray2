@@ -4,21 +4,21 @@
 #include "commonblock.h"
 #include "paramfile.inc"
 
-static void SECTION_COSMOLOGY() {
-    ddouble("Cosmology", "h", &CB.C.h, 0.72);
-    ddouble("Cosmology", "H", &CB.C.H, 0.1);
-    ddouble("Cosmology", "G", &CB.C.G, 43007.1);
-    ddouble("Cosmology", "C", &CB.C.C, 3e5);
-    ddouble("Cosmology", "OmegaB", &CB.C.OmegaB, 0.044);
-    ddouble("Cosmology", "OmegaM", &CB.C.OmegaM, 0.26);
-    ddouble("Cosmology", "OmegaL", &CB.C.OmegaL, 0.74);
+static void SECTION_COSMOLOGY(GKeyFile * keyfile) {
+    ddouble(keyfile, "Cosmology", "h", &CB.C.h, 0.72);
+    ddouble(keyfile, "Cosmology", "H", &CB.C.H, 0.1);
+    ddouble(keyfile, "Cosmology", "G", &CB.C.G, 43007.1);
+    ddouble(keyfile, "Cosmology", "C", &CB.C.C, 3e5);
+    ddouble(keyfile, "Cosmology", "OmegaB", &CB.C.OmegaB, 0.044);
+    ddouble(keyfile, "Cosmology", "OmegaM", &CB.C.OmegaM, 0.26);
+    ddouble(keyfile, "Cosmology", "OmegaL", &CB.C.OmegaL, 0.74);
 }
-static void SECTION_UNIT() {
+static void SECTION_UNIT(GKeyFile * keyfile) {
     double UnitLength_in_cm, UnitMass_in_g, UnitVelocity_in_cm_per_s;
 
-    ddouble("Unit", "UnitLength_in_cm", &UnitLength_in_cm, 3.085678e21); // 1 kpc/h
-    ddouble("Unit", "UnitMass_in_g", &UnitMass_in_g, 1.989e43);  //1e10 solar masses/h
-    ddouble("Unit", "UnitVelocity_in_cm_per_s", &UnitVelocity_in_cm_per_s, 1e5); //1 km/sec
+    ddouble(keyfile, "Unit", "UnitLength_in_cm", &UnitLength_in_cm, 3.085678e21); // 1 kpc/h
+    ddouble(keyfile, "Unit", "UnitMass_in_g", &UnitMass_in_g, 1.989e43);  //1e10 solar masses/h
+    ddouble(keyfile, "Unit", "UnitVelocity_in_cm_per_s", &UnitVelocity_in_cm_per_s, 1e5); //1 km/sec
     CB.U.CM_h = 1 / (UnitLength_in_cm);
     CB.U.CM = CB.U.CM_h * CB.C.h;
     CB.U.SECOND_h = 1 / (UnitLength_in_cm / UnitVelocity_in_cm_per_s);
@@ -32,45 +32,49 @@ static void SECTION_UNIT() {
     CB.U.PROTONMASS = CB.U.GRAM * 1.6726e-24;
 }
 
-static void SECTION_IO() {
-    _string("IO", "datadir", &CB.datadir);
-    _string("IO", "inputbase", &CB.inputbase);
-    _string("IO", "snapbase", &CB.snapbase);
-    _integer("IO", "SnapNumMajorBegin", &CB.SnapNumMajorBegin);
-    dinteger("IO", "SnapNumMajorEnd", &CB.SnapNumMajorEnd, CB.SnapNumMajorBegin + 1);
-    dinteger("IO", "NumReader", &CB.NReader, 0);
-    dinteger("IO", "IDByteSize", &CB.IDByteSize, 8);
+static void SECTION_IO(GKeyFile * keyfile) {
+    _string(keyfile, "IO", "datadir", &CB.datadir);
+    _string(keyfile, "IO", "inputbase", &CB.inputbase);
+    _string(keyfile, "IO", "snapbase", &CB.snapbase);
+    _integer(keyfile, "IO", "SnapNumMajorBegin", &CB.SnapNumMajorBegin);
+    dinteger(keyfile, "IO", "SnapNumMajorEnd", &CB.SnapNumMajorEnd, CB.SnapNumMajorBegin + 1);
+    dinteger(keyfile, "IO", "NumReader", &CB.NReader, 0);
+    dinteger(keyfile, "IO", "IDByteSize", &CB.IDByteSize, 8);
 
 }
 
-static void SECTION_DOMAIN() {
-    ddouble("Domain", "MemImbalanceTol", &CB.MemImbalanceTol, 0.05);
-    ddouble("Domain", "MemAllocFactor", &CB.MemAllocFactor, 2.0);
-    dinteger("Domain", "SubDomainsPerTask", &CB.SubDomainsPerTask, 4);
+static void SECTION_DOMAIN(GKeyFile * keyfile) {
+    ddouble(keyfile, "Domain", "MemImbalanceTol", &CB.MemImbalanceTol, 0.05);
+    ddouble(keyfile, "Domain", "MemAllocFactor", &CB.MemAllocFactor, 2.0);
+    dinteger(keyfile, "Domain", "SubDomainsPerTask", &CB.SubDomainsPerTask, 4);
 }
 
-static void SECTION_TREE() {
-    dinteger("Tree", "NodeSplitThresh", &CB.NodeSplitThresh, 64);
+static void SECTION_TREE(GKeyFile * keyfile) {
+    dinteger(keyfile, "Tree", "NodeSplitThresh", &CB.NodeSplitThresh, 64);
 }
 
-static void SECTION_SFREFF() {
-    ddouble("StarFormation", "CritOverDensity", &CB.SFREFF.CritOverDensity, 57.7);
-    ddouble("StarFormation", "CritPhysDensity", &CB.SFREFF.CritPhysDensity, 0);
-    ddouble("StarFormation", "FactorSN", &CB.SFREFF.FactorSN, 0.1);
-    ddouble("StarFormation", "FactorEVP", &CB.SFREFF.FactorEVP, 1000.0);
-    ddouble("StarFormation", "TempSupernova", &CB.SFREFF.TempSupernova, 1e8);
-    ddouble("StarFormation", "TempClouds", &CB.SFREFF.TempClouds, 1e3);
-    ddouble("StarFormation", "MaxSfrTimescale", &CB.SFREFF.MaxSfrTimescale, 1.5);
+static void SECTION_SFREFF(GKeyFile * keyfile) {
+    ddouble(keyfile, "StarFormation", "CritOverDensity", &CB.SFREFF.CritOverDensity, 57.7);
+    ddouble(keyfile, "StarFormation", "CritPhysDensity", &CB.SFREFF.CritPhysDensity, 0);
+    ddouble(keyfile, "StarFormation", "FactorSN", &CB.SFREFF.FactorSN, 0.1);
+    ddouble(keyfile, "StarFormation", "FactorEVP", &CB.SFREFF.FactorEVP, 1000.0);
+    ddouble(keyfile, "StarFormation", "TempSupernova", &CB.SFREFF.TempSupernova, 1e8);
+    ddouble(keyfile, "StarFormation", "TempClouds", &CB.SFREFF.TempClouds, 1e3);
+    ddouble(keyfile, "StarFormation", "MaxSfrTimescale", &CB.SFREFF.MaxSfrTimescale, 1.5);
 }
 void paramfile_read(char * filename) {
-    PARAMFILE_INIT(filename);
+    GKeyFile * keyfile = g_key_file_new();
+    GError * error = NULL;
+    if(!g_key_file_load_from_file(keyfile, filename, G_KEY_FILE_KEEP_COMMENTS, &error)) {
+        g_error("check param file %s:%s", filename, error->message);
+    }
 
-    SECTION_COSMOLOGY();
-    SECTION_UNIT();
-    SECTION_IO();
-    SECTION_DOMAIN();
-    SECTION_TREE();
-    SECTION_SFREFF();
+    SECTION_COSMOLOGY(keyfile);
+    SECTION_UNIT(keyfile);
+    SECTION_IO(keyfile);
+    SECTION_DOMAIN(keyfile);
+    SECTION_TREE(keyfile);
+    SECTION_SFREFF(keyfile);
 
     char * data = g_key_file_to_data(keyfile, NULL, NULL);
     char * usedfilename = g_strdup_printf("%s/paramfile-used", CB.datadir);
@@ -80,5 +84,5 @@ void paramfile_read(char * filename) {
     }
     g_free(usedfilename);
     g_free(data);
-    PARAMFILE_FINAL();
+    g_key_file_free(keyfile);
 }
