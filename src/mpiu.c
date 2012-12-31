@@ -16,13 +16,21 @@ void mpiu_init() {
 void mpiu_bcast_string(char ** string) {
     int len;
     ROOTONLY {
-        len = strlen(string[0]);
+        if(string[0]) {
+            len = strlen(string[0]);
+        } else {
+            len = -1;
+        }
     }
 
     MPI_Bcast(&len, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    ROOTONLY { } else {
-        string[0] = g_new(char, len + 1);
+    if(len == -1) {
+        string[0] = NULL;
+    } else {
+        ROOTONLY { } else {
+            string[0] = g_new(char, len + 1);
+        }
+        MPI_Bcast(string[0], len + 1, MPI_BYTE, 0, MPI_COMM_WORLD);
     }
-    MPI_Bcast(string[0], len + 1, MPI_BYTE, 0, MPI_COMM_WORLD);
 }
 
