@@ -6,22 +6,22 @@
 #include <math.h>
 
 static fftw_complex * Cdata;
-static double * Disp;
-static intptr_t Local_nx;
-static intptr_t Local_x_start;
+double * Disp;
+intptr_t Local_nx;
+intptr_t Local_x_start;
 static fftw_plan InversePlan;
+static size_t localsize;
+
 static uint32_t * seedtable;
 static int Nmesh, Nsample;
 static double BoxSize;
 static int SphereMode;
 static double Dplus;
-
 /* from powerspec.c */
 extern double PowerSpec(double);
 extern double GrowthFactor(double, double);
 
 #define PK(i, j, k) Cdata[(((i) - Local_x_start) * Nmesh + (j)) * (Nmesh / 2 + 1) + (k)]
-#define PR(i, j, k) Disp[(((i) - Local_x_start) * Nmesh + (j)) * (2 * (Nmesh / 2 + 1)) + (k)]
 
 void init_disp() {
     Nmesh = CB.IC.Nmesh;
@@ -32,18 +32,8 @@ void init_disp() {
     Dplus = GrowthFactor(CB.a, 1.0);
 
     fftw_mpi_init();
-    size_t localsize = fftw_mpi_local_size_3d(Nmesh, Nmesh, Nmesh, MPI_COMM_WORLD, &Local_nx, &Local_x_start);
 
-    Cdata = fftw_alloc_complex(localsize);
-    if(!Cdata) {
-        g_error("memory allocation failed");
-    }
-    ROOTONLY {
-        g_message("allocated %td Mbyte on Task %d for FFT's", localsize * sizeof(double) * 2, 0);
-    }
-    Disp = (double*) Cdata;
-    /* In place b/c Cdata is an alias of Disp */
-    InversePlan = fftw_mpi_plan_dft_c2r_3d(Nmesh, Nmesh, Nmesh, Cdata, Disp, MPI_COMM_WORLD, FFTW_ESTIMATE);
+    localsize = fftw_mpi_local_size_3d(Nmesh, Nmesh, Nmesh, MPI_COMM_WORLD, &Local_nx, &Local_x_start);
 
     gsl_rng * random_generator = gsl_rng_alloc(gsl_rng_ranlxd1);
 
@@ -81,6 +71,7 @@ void init_disp() {
 }
 
 void free_disp(void) {
+    if(Cdata) free(Cdata);
     g_free(seedtable);
     fftw_destroy_plan(InversePlan);
     fftw_mpi_cleanup();
@@ -90,12 +81,28 @@ static int i_in_slab(int i) {
     return i >= Local_x_start && i < Local_x_start + Local_nx;
 }
 
-void fill_PK(int axes) {
+void fill_PK(int ax) {
+    if(ax < 0) return;
     int i, ii, j, jj, k, kk;
     double K0 = 2 * G_PI / BoxSize;
     double fac = pow(K0, 1.5);
     double kvec[3];
-    memset(Cdata, Local_nx * Nmesh * (Nmesh / 2 + 1) * sizeof(fftw_complex), 0);
+
+    if(!Cdata) {
+        /* allocate memory only if it is needed */
+        Cdata = fftw_alloc_complex(localsize);
+        if(!Cdata) {
+            g_error("memory allocation failed");
+        }
+        ROOTONLY {
+            g_message("allocated %td Mbyte on Task %d for FFT's", localsize * sizeof(double) * 2, 0);
+        }
+        Disp = (double*) Cdata;
+        /* In place b/c Cdata is an alias of Disp */
+        InversePlan = fftw_mpi_plan_dft_c2r_3d(Nmesh, Nmesh, Nmesh, Cdata, Disp, MPI_COMM_WORLD, FFTW_ESTIMATE);
+    }
+
+    memset(Cdata, 0, Local_nx * Nmesh * (Nmesh / 2 + 1) * sizeof(fftw_complex));
     gsl_rng * random_generator = gsl_rng_alloc(gsl_rng_ranlxd1);
 
     for(i = 0; i < Nmesh; i++) {
@@ -151,12 +158,12 @@ void fill_PK(int axes) {
 
                 double re, im;
 
-                if(axes >=0) {
-                    re = -kvec[axes] / kmag2 * delta * sin(phase);
-                    im = kvec[axes] / kmag2 * delta * cos(phase);
-                } else {
+                if(ax == 3) {
                     re = delta * cos(phase);
                     im = delta * sin(phase);
+                } else if(ax >=0 && ax < 3) {
+                    re = -kvec[ax] / kmag2 * delta * sin(phase);
+                    im = kvec[ax] / kmag2 * delta * cos(phase);
                 }
 
                 if(k == 0) {
@@ -198,18 +205,9 @@ void fill_PK(int axes) {
     }
     gsl_rng_free(random_generator);
 }
-void read_PR(int axes) {
-    intptr_t i, j, k;
-    for(i = Local_x_start; i < Local_nx + Local_x_start; i++) {
-        for(j = 0; j < Nmesh; j++) {
-            for(k = 0; k < Nmesh; k++) {
-                float disf = PR(i, j, k);
-            }
-        }
-    }
-}
 
-void disp(int axes) {
-    fill_PK(axes);
-    fftw_execute(InversePlan);
+
+void disp(int ax) {
+    fill_PK(ax);
+    fftw_execute(InversePlan); 
 }

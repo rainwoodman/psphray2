@@ -13,7 +13,8 @@ SOURCES = \
     ../mpiu.c \
     commonblock.c \
     power.c \
-    disp.c
+    disp.c \
+	filter.c
 
 HEADERS =
 OBJECTS = $(SOURCES:.c=.o)

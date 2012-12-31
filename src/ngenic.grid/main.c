@@ -5,6 +5,10 @@
 #include "paramfile.inc"
 #include "commonblock.h"
 
+extern void init_power(void);
+extern void init_disp(void);
+extern void init_filter(void);
+
 void abort() {
     MPI_Abort(MPI_COMM_WORLD, 1);
     /* shut up the compiler */
@@ -14,14 +18,15 @@ void print_handler(const gchar * string) {
     fputs(string, stdout);
     fflush(stdout);
 }
-static char ** paramfilename = NULL;
+static char ** args = NULL;
 
 static GOptionEntry entries[] =
 {
   { "verbose", 'v', 0, G_OPTION_ARG_NONE, &CB.F.VERBOSE, "Be verbose", NULL },
-  { "Nmesh", 'n', 0, G_OPTION_ARG_INT, &CB.IC.Nmesh, "Nmesh", NULL },
-  { "scale", 's', 0, G_OPTION_ARG_DOUBLE, &CB.IC.Scale, "scale region sizes", NULL },
-  { G_OPTION_REMAINING, 0, 0, G_OPTION_ARG_FILENAME_ARRAY, &paramfilename, "Configratuion file", NULL },
+  { "full", 'F', 0, G_OPTION_ARG_NONE, &CB.F.FULL, "write all points, neglect the regions, this is confilict with -I", NULL },
+  { "index", 'I', 0, G_OPTION_ARG_NONE, &CB.F.INDEX, "write the region map, but do not do the FFT, the default is to write delta and disp . The flag is conflict with -F", NULL },
+  { "scale", 's', 0, G_OPTION_ARG_DOUBLE, &CB.IC.Scale, "scale region sizes", "1.0"},
+  { G_OPTION_REMAINING, 0, 0, G_OPTION_ARG_STRING_ARRAY, &args, "", NULL },
   { NULL }
 };
 
@@ -52,6 +57,7 @@ static void SECTION_IC(GKeyFile * keyfile) {
     dinteger(keyfile, "IC", "WhichSpectrum", &CB.IC.WhichSpectrum, 1); /*1 for EH, 3 for Etsu, 2 is from file and broken*/
     _double(keyfile, "IC", "BoxSize", &CB.BoxSize);
     _double(keyfile, "IC", "a", &CB.a);
+    _double(keyfile, "IC", "Sigma8", &CB.C.Sigma8);
     ddouble(keyfile, "IC", "PrimordialIndex", &CB.IC.PrimordialIndex, 0.96);
     ddouble(keyfile, "IC", "ShapeGamma", &CB.IC.ShapeGamma, 0.201); /* only for Efstathiou specturm */
 }
@@ -80,6 +86,7 @@ static void paramfile_read(char * filename) {
         g_error("check param file %s:%s", filename, error->message);
     }
 
+    _string(keyfile, "IO", "datadir", &CB.datadir);
     SECTION_COSMOLOGY(keyfile);
     SECTION_UNIT(keyfile);
     SECTION_IC(keyfile);
@@ -105,7 +112,7 @@ static void paramfile_read(char * filename) {
             CB.IC.R[i].size[d] = list[length == 6 ? d + 3 : 3];
         }
         g_free(list);
-        g_message("using region : center (%g %g %g) size (%g %g %g)", 
+        g_message("using region %d: center (%g %g %g) size (%g %g %g)", i,
                 CB.IC.R[i].center[0], CB.IC.R[i].center[1], CB.IC.R[i].center[2], 
                 CB.IC.R[i].size[0], CB.IC.R[i].size[1], CB.IC.R[i].size[2]);
 
@@ -123,26 +130,51 @@ int main(int argc, char * argv[]) {
 
     ROOTONLY {
         GError * error = NULL;
-        GOptionContext * context = g_option_context_new("paramfile");
+        GOptionContext * context = g_option_context_new("paramfile Nmesh");
         g_option_context_add_main_entries(context, entries, NULL);
-
+        g_option_context_set_summary(context, 
+"create the displacement and delta from a given IC by Fourier transforming"
+"a random realization of the power spectrum. Disp and Delta of the selected regions (3-D boxes) are dumped into files [0-3].%d, where %d is the process id. 0, 1, 2 are the 3-vector of the displacement in code units (of KPC/h, usually), and 3 is the density delta. With -F, all points of the grid size are dumped. with -I meta data about which dumped point is written index is the index of the point in the regional box, and regions(char) is the regions.");
         if(!g_option_context_parse(context, &argc, &argv, &error)) {
             g_print("Option parsing failed: %s", error->message);
             abort();
         }
-        if(g_strv_length(paramfilename) != 1) {
+        if(g_strv_length(args) != 2) {
             g_print(g_option_context_get_help(context, FALSE, NULL));
             abort();
         }
-        paramfile_read(paramfilename[0]);
-        g_message("Reading param file %s", paramfilename[0]);
+        paramfile_read(args[0]);
+        g_message("Reading param file %s", args[0]);
         g_option_context_free(context);
+        CB.IC.Nmesh = g_ascii_strtoll(args[1], NULL, 10);
+        if(CB.IC.Nmesh == 0) {
+            g_error("must give Nmesh!");
+        }
+        if(CB.IC.Scale == 0) {
+            CB.IC.Scale = 1.0;
+        }
     }
     common_block_sync();
     init_power();
     init_disp();
-    for(int ax=-1; ax < 3; ax ++) {
-        disp(ax);
+    init_filter();
+
+    ROOTONLY {
+        dump_filter(g_strdup_printf("%s/filters-%d", CB.datadir, CB.IC.Nmesh));
+    }
+
+    char * blocks[] = {"region", "index", "dispx", "dispy", "dispz", "delta"};
+    char * tmp = g_strdup_printf("%d", NTask);
+    int width = strlen(tmp);
+    g_free(tmp);
+    for(int ax = -2; ax < 4; ax ++) {
+        if(!CB.F.INDEX && ax < 0) continue;
+        /* -2 is the region mask and -1 is the index map, they do not need the displacment field */
+        if(ax >= 0) disp(ax);
+        char * fname = g_strdup_printf("%s/%s-%d.%0*d", CB.datadir, blocks[ax + 2], CB.IC.Nmesh, width, ThisTask);
+        filter(ax, fname);
+        g_free(fname);
     }
     free_disp();
+    MPI_Finalize();
 }

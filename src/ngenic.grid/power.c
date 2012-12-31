@@ -80,6 +80,7 @@ void init_power(void)
 
   R8 = 8 * (1000 * CB.U.KPC_h); /* 8 Mpc/h */
 
+  Norm = 1.0;
   Norm = CB.C.Sigma8 * CB.C.Sigma8 / TopHatSigma2(R8);
 }
 
