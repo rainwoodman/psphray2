@@ -14,7 +14,6 @@ typedef struct {
     struct {
         int VERBOSE;
         int INDEX;
-        int FULL;
     } F;
     struct {
         double MYEAR_h;

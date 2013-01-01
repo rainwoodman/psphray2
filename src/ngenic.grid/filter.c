@@ -14,6 +14,7 @@ static int (*IBottom)[3];
 static int (*ITop)[3];
 static int (*ISize)[3];
 static int Nmesh;
+double F_Omega(double a);
 
 void init_filter() {
     Nmesh = CB.IC.Nmesh;
@@ -23,8 +24,11 @@ void init_filter() {
     ISize = (int (*) [3]) g_new0(int, 3 * CB.IC.NRegions);
     for(int r = 0; r < CB.IC.NRegions; r++) {
         for(int d = 0; d < 3; d++) {
-            IBottom[r][d] = floor((CB.IC.R[r].center[d] - CB.IC.R[r].size[d] * 0.5 * CB.IC.Scale) / R0);
-            ITop[r][d] = ceil((CB.IC.R[r].center[d] + CB.IC.R[r].size[d] * 0.5 * CB.IC.Scale) / R0);
+            /* make sure the center is in the box.*/
+            double c = remainder(CB.IC.R[r].center[d], CB.BoxSize);
+            while(c < 0) c += CB.BoxSize;
+            IBottom[r][d] = floor((c - CB.IC.R[r].size[d] * 0.5 * CB.IC.Scale) / R0) - 1;
+            ITop[r][d] = ceil((c + CB.IC.R[r].size[d] * 0.5 * CB.IC.Scale) / R0)+ 1;
             ISize[r][d] = ITop[r][d] - IBottom[r][d];
         }
         ROOTONLY g_message("Region %d, %dx%dx%d", r, 
@@ -61,7 +65,7 @@ void filter(int ax, char * fname) {
         for(j = 0; j < Nmesh; j ++) {
             for(k = 0; k < Nmesh; k ++) {
                 for(int r = 0; r < CB.IC.NRegions; r++) {
-                    if(CB.F.FULL) {
+                    if(CB.IC.Scale == 0.0) {
                         float data = PR(i, j, k);
                         * (float * ) bp = data;
                         bp += sizeof(float);
@@ -98,6 +102,13 @@ void filter(int ax, char * fname) {
 
 void dump_filter(char * fname) {
     FILE * fp = fopen(fname, "w");
+    double hubble_a = CB.C.H * sqrt(CB.C.OmegaM / pow(CB.a, 3) + 
+            (1 - CB.C.OmegaM - CB.C.OmegaL) / pow(CB.a, 2) + CB.C.OmegaL);
+    double vel_prefac = CB.a * hubble_a * F_Omega(CB.a);
+    vel_prefac /= sqrt(CB.a);   /* converts to Gadget velocity */
+    fprintf(fp, "vfact = %g\n", vel_prefac);
+    fprintf(fp, "NTask = %d\n", NTask);
+    fprintf(fp, "NRegion = %d\n", CB.IC.NRegions);
     for(int r = 0; r < CB.IC.NRegions; r++) {
         fprintf(fp, "Offset[%d] = [%d, %d, %d]\n", r, 
             IBottom[r][0], 
@@ -105,9 +116,9 @@ void dump_filter(char * fname) {
             IBottom[r][2]
         );
         fprintf(fp, "Size[%d] = [%d, %d, %d]\n", r, 
-            ITop[r][0], 
-            ITop[r][1], 
-            ITop[r][2]
+            ISize[r][0], 
+            ISize[r][1], 
+            ISize[r][2]
         );
     }
     fclose(fp);

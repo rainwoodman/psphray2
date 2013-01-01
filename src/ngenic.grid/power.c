@@ -26,7 +26,6 @@ static double PowerSpec_Efstathiou(double k);
 double GrowthFactor(double astart, double aend);
 static double growth(double a);
 static double growth_int(double a);
-static double F_Omega(double a);
 static double TopHatSigma2(double R);
 
 double PowerSpec(double k)
@@ -225,7 +224,7 @@ static double growth_int(double a)
 }
 
 
-static double F_Omega(double a)
+double F_Omega(double a)
 {
   double omega_a;
 

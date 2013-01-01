@@ -2,6 +2,7 @@
 #include <gsl/gsl_rng.h>
 #include "mpiu.h"
 #include "commonblock.h"
+#include <string.h>
 #include <fftw3-mpi.h>
 #include <math.h>
 
@@ -95,7 +96,7 @@ void fill_PK(int ax) {
             g_error("memory allocation failed");
         }
         ROOTONLY {
-            g_message("allocated %td Mbyte on Task %d for FFT's", localsize * sizeof(double) * 2, 0);
+            g_message("allocated %td byte on Task %d for FFT's", localsize * sizeof(double) * 2, 0);
         }
         Disp = (double*) Cdata;
         /* In place b/c Cdata is an alias of Disp */

@@ -23,9 +23,7 @@ static char ** args = NULL;
 static GOptionEntry entries[] =
 {
   { "verbose", 'v', 0, G_OPTION_ARG_NONE, &CB.F.VERBOSE, "Be verbose", NULL },
-  { "full", 'F', 0, G_OPTION_ARG_NONE, &CB.F.FULL, "write all points, neglect the regions, this is confilict with -I", NULL },
-  { "index", 'I', 0, G_OPTION_ARG_NONE, &CB.F.INDEX, "write the region map, but do not do the FFT, the default is to write delta and disp . The flag is conflict with -F", NULL },
-  { "scale", 's', 0, G_OPTION_ARG_DOUBLE, &CB.IC.Scale, "scale region sizes", "1.0"},
+  { "index", 'I', 0, G_OPTION_ARG_NONE, &CB.F.INDEX, "write the region map, but do not do the FFT, the default is to write delta and disp.", NULL },
   { G_OPTION_REMAINING, 0, 0, G_OPTION_ARG_STRING_ARRAY, &args, "", NULL },
   { NULL }
 };
@@ -91,6 +89,7 @@ static void paramfile_read(char * filename) {
     SECTION_UNIT(keyfile);
     SECTION_IC(keyfile);
     gsize nkeys = 0;
+
     char ** keys = g_key_file_get_keys(keyfile, "Regions", &nkeys, &error);
     if(keys == NULL) {
         g_error("empty regions list:%s", error->message);
@@ -99,24 +98,54 @@ static void paramfile_read(char * filename) {
     CB.IC.R = g_new0(region_t, nkeys);
 
     for(int i = 0; keys[i]; i++) {
-        size_t length;
-        double * list = g_key_file_get_double_list(keyfile, "Regions", keys[i], &length, &error);
-        if(!list) {
+        char * arg = g_key_file_get_string(keyfile, "Regions", keys[i], &error);
+        if(!arg) {
             g_error("region failed :%s", error->message);
         }
+        char ** sp = g_strsplit_set(arg, ",;", -1);
+        int length = g_strv_length(sp);
         if(length != 4 && length != 6) {
             g_error("region must be provided with 4 or 6 numbers: x;y;z; sx[;sy;sz]");
         }
         for(int d = 0; d < 3; d++) {
-            CB.IC.R[i].center[d] = list[d];
-            CB.IC.R[i].size[d] = list[length == 6 ? d + 3 : 3];
+            CB.IC.R[i].center[d] = atof(sp[d]);
+            CB.IC.R[i].size[d] = atof(sp[length == 6 ? d + 3 : 3]);
         }
-        g_free(list);
+        g_strfreev(sp);
+        g_free(arg);
         g_message("using region %d: center (%g %g %g) size (%g %g %g)", i,
                 CB.IC.R[i].center[0], CB.IC.R[i].center[1], CB.IC.R[i].center[2], 
                 CB.IC.R[i].size[0], CB.IC.R[i].size[1], CB.IC.R[i].size[2]);
 
     }
+    g_strfreev(keys);
+
+    keys = g_key_file_get_keys(keyfile, "Levels", &nkeys, &error);
+    if(keys == NULL) {
+        g_error("empty regions list:%s", error->message);
+    }
+    CB.IC.Scale = -1;
+    for(int i = 0; keys[i]; i++) {
+        char * args = g_key_file_get_string(keyfile, "Levels", keys[i], &error);
+        char ** sp = g_strsplit_set(args, ";,", -1);
+        int length = g_strv_length(sp);
+        if(length != 2) {
+            g_error("a level must have 2 entries, Nmesh and scaling factor");
+        }
+        if(atoi(sp[0]) == CB.IC.Nmesh) {
+            CB.IC.Scale = atof(sp[1]);
+            break;
+        }
+        g_strfreev(sp);
+        g_free(args);
+    }
+    if(CB.IC.Scale == -1) {
+        g_error("Nmesh (%d) does not present in paramfile ", CB.IC.Nmesh);
+    }
+    if(CB.IC.Scale == 0.0 && CB.F.INDEX) {
+        g_error("no index to be made for the base level mesh (whose Scale == 0.0)");
+    }
+    g_message("using scale %g", CB.IC.Scale);
     g_strfreev(keys);
     g_key_file_free(keyfile);
 }
@@ -134,7 +163,7 @@ int main(int argc, char * argv[]) {
         g_option_context_add_main_entries(context, entries, NULL);
         g_option_context_set_summary(context, 
 "create the displacement and delta from a given IC by Fourier transforming"
-"a random realization of the power spectrum. Disp and Delta of the selected regions (3-D boxes) are dumped into files [0-3].%d, where %d is the process id. 0, 1, 2 are the 3-vector of the displacement in code units (of KPC/h, usually), and 3 is the density delta. With -F, all points of the grid size are dumped. with -I meta data about which dumped point is written index is the index of the point in the regional box, and regions(char) is the regions.");
+"a random realization of the power spectrum. Disp and Delta of the selected regions (3-D boxes) are dumped into files [0-3].%d, where %d is the process id. 0, 1, 2 are the 3-vector of the displacement in code units (of KPC/h, usually), and 3 is the density delta. With -I meta data about which dumped point is written index is the index of the point in the regional box, and regions(char) is the regions.");
         if(!g_option_context_parse(context, &argc, &argv, &error)) {
             g_print("Option parsing failed: %s", error->message);
             abort();
@@ -143,16 +172,14 @@ int main(int argc, char * argv[]) {
             g_print(g_option_context_get_help(context, FALSE, NULL));
             abort();
         }
-        paramfile_read(args[0]);
-        g_message("Reading param file %s", args[0]);
-        g_option_context_free(context);
         CB.IC.Nmesh = g_ascii_strtoll(args[1], NULL, 10);
         if(CB.IC.Nmesh == 0) {
             g_error("must give Nmesh!");
         }
-        if(CB.IC.Scale == 0) {
-            CB.IC.Scale = 1.0;
-        }
+        /* this will make use of CB.IC.Nmesh, thus later */
+        g_message("Reading param file %s", args[0]);
+        paramfile_read(args[0]);
+        g_option_context_free(context);
     }
     common_block_sync();
     init_power();
@@ -160,7 +187,9 @@ int main(int argc, char * argv[]) {
     init_filter();
 
     ROOTONLY {
-        dump_filter(g_strdup_printf("%s/filters-%d", CB.datadir, CB.IC.Nmesh));
+        char * fname = g_strdup_printf("%s/filters-%d", CB.datadir, CB.IC.Nmesh);
+        dump_filter(fname);
+        free(fname);
     }
 
     char * blocks[] = {"region", "index", "dispx", "dispy", "dispz", "delta"};
@@ -169,6 +198,7 @@ int main(int argc, char * argv[]) {
     g_free(tmp);
     for(int ax = -2; ax < 4; ax ++) {
         if(!CB.F.INDEX && ax < 0) continue;
+        if(CB.F.INDEX && ax >=0) continue;
         /* -2 is the region mask and -1 is the index map, they do not need the displacment field */
         if(ax >= 0) disp(ax);
         char * fname = g_strdup_printf("%s/%s-%d.%0*d", CB.datadir, blocks[ax + 2], CB.IC.Nmesh, width, ThisTask);
