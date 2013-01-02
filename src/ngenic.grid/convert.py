@@ -64,6 +64,13 @@ def read_meta(Nmesh, datadir):
     exec(metalines, meta)
     return meta
 
+def writerecord(file, data):
+    foo = numpy.empty(1, 'i4')
+    foo[...] = data.nbytes
+    foo.tofile(file)
+    data.tofile(file)
+    foo.tofile(file)
+
 
 args = parseargs(parser)
 
@@ -78,10 +85,20 @@ def readblock(Nmesh, block, dtype):
   NTask = meta['NTask']
   ZeroPadding = int(numpy.ceil(numpy.log10(NTask+0.1)))
   content = []
+  # if there is a single file version, then return it
+  # mainly for index and regions files 
+  fname = '%s/%s-%d.0' %(args.datadir, block, Nmesh)
+  if os.path.exists(fname):
+      return numpy.fromfile(fname, dtype)
+
   for fid in range(NTask):
-    content.append(numpy.fromfile('%s/%s-%d.%0*d' %(
-                        args.datadir, 
-                        block, Nmesh, ZeroPadding, fid), dtype))
+    fname = '%s/%s-%d.%0*d' %(
+                 args.datadir, 
+                 block, Nmesh, ZeroPadding, fid)
+    if os.path.exists(fname):
+      content.append(numpy.fromfile(fname, dtype))
+    #skip the tasks that do not dump any files
+
   return numpy.concatenate(content)
 
 def setup_innerlevel(Nmesh):
@@ -136,7 +153,38 @@ def setup_baselevel(Nmesh):
   return data
 
 def ramses():
-  pass
+  def write_ramses(header, Nmesh, name, buffer):
+    with file('%s%d-%s' % (args.prefix, Nmesh, name), 'w') as icfile:
+      buffer = buffer.reshape(header['np'])
+      writerecord(icfile, header)
+      for row in buffer.transpose((2, 0, 1)):
+        writerecord(icfile, row.ravel('F'))
+
+  RHEADER = numpy.dtype([
+   ('np', ('i4', 3)), ('dx', 'f4'), 
+   ('xo', ('f4', 3)), ('astart', 'f4'), 
+   ('omegam', 'f4'), ('omegav', 'f4'), ('h0', 'f4')])
+  fac = 1.0 / args.h * args.UnitLength_in_cm / 3.08567758e24
+  boxsize = args.BoxSize * fac
+  for i, Nmesh in enumerate(args.Levels):
+    header = numpy.zeros(None, RHEADER)
+    header['np'] = args.Meta[Nmesh]['Size'][0]
+    header['dx'] = boxsize / Nmesh
+    header['xo'][:] = header['dx'] * args.Meta[Nmesh]['Offset'][0]
+    header['astart'] = args.a
+    header['omegam'] = args.OmegaM
+    header['omegav'] = args.OmegaL
+    header['h0'] = args.h * 100.0
+
+    delta = readblock(Nmesh, 'delta', 'f4')
+    write_ramses(header, Nmesh, 'deltab', delta)
+    delta = None
+    for i, block in enumerate(['dispx', 'dispy', 'dispz']):
+      disp = readblock(Nmesh, block, 'f4')
+      disp *= fac
+      write_ramses(header, Nmesh, block, disp)
+      disp /= vfact
+      write_ramses(header, Nmesh, ['velcx', 'velcy', 'velcz'][i], disp)
 
 def gadget():
   GHEADER = numpy.dtype([
@@ -191,16 +239,81 @@ def gadget():
         mask2 |= (dis < 1.0).all(axis=-1)
     return mask2
 
-  def writerecord(file, data):
-    foo = numpy.empty(1, 'i4')
-    foo[...] = data.nbytes
-    foo.tofile(file)
-    data.tofile(file)
-    foo.tofile(file)
+  def write_gadget(data, Nmesh, makegas, ptype):
+    with file('%s.%d' % (args.prefix, i), 'w') as icfile:
+      critical_mass = 3 * args.Hubble ** 2 / (8 * numpy.pi * args.G) * (args.BoxSize / Nmesh) ** 3
+  
+      header = numpy.zeros(None, GHEADER)
+      header['time'] = args.a
+      header['redshift'] = 1. / args.a - 1
+      header['boxsize'] = args.BoxSize
+      header['OmegaM'] = args.OmegaM
+      header['OmegaL'] = args.OmegaL
+      header['h'] = args.h
+      Npar = len(data)
+  
+      header['N'][ptype] = Npar
+      header['Ntot_low'][ptype] = Npar
+      if makegas:
+        header['N'][0] = Npar
+        header['Ntot_low'][0] = Npar
+        header['mass'][ptype] = (args.OmegaM -args.OmegaB) * critical_mass
+      else:
+        header['mass'][ptype] = args.OmegaM * critical_mass
+  
+      header['Nfiles'] = len(args.Levels)
+  
+      writerecord(icfile, header)
+  
+      # position
+      pos = numpy.float32(data['gps']) * args.BoxSize
+      pos /= Nmesh
+      pos += data['disp']
+      if makegas: 
+        pos = numpy.tile(pos, 2)
+        # gas
+        pos[:Npar] -= (1 - args.OmegaB / args.OmegaM) * args.BoxSize / Nmesh
+        # dm
+        pos[Npar:] += args.OmegaB / args.OmegaM * args.BoxSize / Nmesh
+  
+      numpy.remainder(pos, args.BoxSize, pos)
+  
+      writerecord(icfile, pos)
+      pos = None
+  
+      # velocity
+      vel = data['disp'] * args.Meta[Nmesh]['vfact']
+      if makegas: 
+        vel = numpy.tile(vel, 2)
+      writerecord(icfile, vel)
+      vel = None
+  
+      # id
+      if makegas:
+        id = numpy.empty(Npar + Npar, dtype=('i4', 2))
+        id[:, 0] = numpy.arange(Npar + Npar)
+      else:
+        id = numpy.empty(Npar, dtype=('i4', 2))
+        id[:, 0] = numpy.arange(Npar)
+      id[:, 1] = len(args.Levels) - i - 1
+      writerecord(icfile, id)
+      id = None
+  
+      # mass
+      if makegas:
+        mass = numpy.empty(Npar, dtype='f4')
+        mass[:] = args.OmegaB * critical_mass
+        writerecord(icfile, mass)
+        mass = None 
+      
+      # ie ( all zeros)
+      if makegas:
+        ie = numpy.zeros(Npar, dtype='f4')
+        writerecord(icfile, ie)
+        ie = None
 
   for i, Nmesh in enumerate(args.Levels):
     data = setup_level(Nmesh)
-    icfile = file('%s.%d' % (args.prefix, i), 'w')
     if i < len(args.Levels) - 1:
       # if there is a refine level, dig a hole from the current level
       # leaving space for the next level.
@@ -216,38 +329,14 @@ def gadget():
       fillmask = dig(data, Nmesh, scale=args.Scale[Nmesh], Align=NmeshPrev)
       data = data[fillmask]
 
-    header = numpy.zeros(None, GHEADER)
-    header['time'] = args.a
-    header['redshift'] = 1. / args.a + 1
-    header['boxsize'] = args.BoxSize
-    header['OmegaM'] = args.OmegaM
-    header['OmegaL'] = args.OmegaL
-    header['h'] = args.h
-    header['N'][0] = len(data)
-    header['Nfiles'] = len(args.Levels)
-    header['Ntot_low'][0] = len(data)
-    writerecord(icfile, header)
+    if i != len(args.Levels) - 1:
+      makegas = False
+      ptype = 2
+    else:
+      makegas = True
+      ptype = 1
 
-    pos = data['gps'] * args.BoxSize
-    pos /= Nmesh
-    pos += data['disp']
-    numpy.remainder(pos, args.BoxSize, pos)
-    writerecord(icfile, pos)
-    pos = None
-    vel = data['disp'] * args.Meta[Nmesh]['vfact']
-    writerecord(icfile, vel)
-    vel = None
-    id = numpy.empty(len(data), dtype=('i4', 2))
-    id[:, 1] = Nmesh
-    id[:, 0] = numpy.arange(len(data))
-    writerecord(icfile, id)
-    id = None
-    mass = numpy.empty(len(data), dtype='f4')
-    critical_mass = 3 * args.Hubble ** 2 / (8 * numpy.pi * args.G) * (args.BoxSize / Nmesh) ** 3
-    mass[:] = args.OmegaM * critical_mass
-    writerecord(icfile, mass)
-    mass[:] = 0
-    writerecord(icfile, mass)
+    write_gadget(data, Nmesh, makegas, ptype)
 
 def main():
   if args.format == 'gadget':
