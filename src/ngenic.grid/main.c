@@ -197,7 +197,7 @@ int main(int argc, char * argv[]) {
 
     ROOTONLY {
         if(!CB.F.INDEX) {
-            char * fname = g_strdup_printf("%s/filters-%d", CB.datadir, CB.IC.Nmesh);
+            char * fname = g_strdup_printf("%s/meta-%d", CB.datadir, CB.IC.Nmesh);
             dump_filter(fname);
             free(fname);
         }

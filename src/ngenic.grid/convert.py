@@ -61,7 +61,7 @@ def parseargs(parser):
 
 def read_meta(Nmesh, datadir):
     meta = {'Offset':{}, 'Size':{}}
-    metalines = file('%s/filters-%d' % (datadir, Nmesh)).read()
+    metalines = file('%s/meta-%d' % (datadir, Nmesh)).read()
     exec(metalines, meta)
     return meta
 
