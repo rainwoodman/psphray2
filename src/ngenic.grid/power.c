@@ -1,4 +1,5 @@
 #include <glib.h>
+#include <stdint.h>
 #include <gsl/gsl_integration.h>
 #include "commonblock.h"
 #include <math.h>

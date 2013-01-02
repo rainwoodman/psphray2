@@ -1,4 +1,5 @@
 #include <glib.h>
+#include <stdint.h>
 #include "mpiu.h"
 #include "commonblock.h"
 #include <math.h>
