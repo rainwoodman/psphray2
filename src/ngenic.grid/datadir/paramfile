@@ -1,0 +1,31 @@
+[IO]
+datadir = datadir
+inputbase = datadir/snapshot_%03d
+#inputbase = /home/yfeng1/snapdir_%03d/snapshot_%03d.%d
+snapbase = datadir/snapshot_%03d_rt_%03d
+SnapNumMajorBegin = 0
+SnapNumMajorEnd = 1
+#SnapNumMajorBegin = 296
+#SnapNumMajorEnd = 297
+NumReader = 4
+
+[Domain]
+MemAllocFactor=4
+NodeSplitThresh=1
+SubDomainsPerTask=16
+
+[IC]
+Seed = 181170
+BoxSize = 250
+a = 0.00625
+Sigma8 = 0.8
+
+[Levels]
+Level1 = 16, 0
+Level2 = 32, 2.0
+Level3 = 64, 1.0
+
+[Regions]
+Zoom1 = 20,200,200; 50
+Zoom2 = 200,200,230; 50
+
