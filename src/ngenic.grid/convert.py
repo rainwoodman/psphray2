@@ -25,10 +25,8 @@ def parseargs(parser):
   args.UnitVelocity_in_cm_per_s = config.getfloat("Unit", "UnitVelocity_in_cm_per_s")
   args.UnitMass_in_g = config.getfloat("Unit", "UnitMass_in_g")
   args.UnitTime_in_s = args.UnitLength_in_cm / args.UnitVelocity_in_cm_per_s;
-  args.HUBBLE = 3.2407789e-18
-  args.GRAVITY = 6.672e-8
-  args.G = args.GRAVITY / args.UnitLength_in_cm ** 3 * args.UnitMass_in_g * args.UnitTime_in_s ** 2
-  args.Hubble = args.HUBBLE * args.UnitTime_in_s
+  args.G = config.getfloat("Cosmology", "G")
+  args.H = config.getfloat("Cosmology", "H")
 
   Regions = []
   for name, value in config.items("Regions"):
@@ -252,7 +250,7 @@ def gadget():
 
   def write_gadget(data, Nmesh, makegas, ptype):
     with file('%s.%d' % (args.prefix, i), 'w') as icfile:
-      critical_mass = 3 * args.Hubble ** 2 / (8 * numpy.pi * args.G) * (args.BoxSize / Nmesh) ** 3
+      critical_mass = 3 * args.H ** 2 / (8 * numpy.pi * args.G) * (args.BoxSize / Nmesh) ** 3
   
       header = numpy.zeros(None, GHEADER)
       header['time'] = args.a
