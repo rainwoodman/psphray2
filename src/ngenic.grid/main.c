@@ -147,6 +147,15 @@ static void paramfile_read(char * filename) {
     }
     g_message("using scale %g", CB.IC.Scale);
     g_strfreev(keys);
+
+    char * data = g_key_file_to_data(keyfile, NULL, NULL);
+    char * usedfilename = g_strdup_printf("%s/paramfile-used", CB.datadir);
+    if(!g_file_set_contents(usedfilename, data, -1, &error)) {
+        g_critical("failed to save used params to %s:%s", usedfilename, error->message);
+        g_error_free(error);
+    }
+    g_free(usedfilename);
+    g_free(data);
     g_key_file_free(keyfile);
 }
 
