@@ -1,0 +1,27 @@
+This is a grid version of the GADGET IC generator.
+
+It use the psphray2 code for configuration files and IO.
+
+To generate an IC, three steps shall be done:
+
+0. write the paramfile (see datadir/paramfile for example)
+1. On a super computer with huge memory, run
+   ngenic.grid paramfile Nmesh
+   for each desired mesh size(Nmesh) with MPI.
+   this step calculates the FFT and dump the displacement field
+   of selected regions at given sizes and positions.
+
+2. On the same super computer, with a free small node attached 
+   to the same filesystem, run
+   ngenic.grid -I paramfile Nmesh
+   for each desired mesh size Nmesh, without MPI.
+   (for the base level Nmesh this code will fail)
+   this step creates the index of the points dumped in the first step
+
+3. On a large shared memory machine (enough to hold an entire zoom IC)
+   run 
+   python convert.py paramfile {gadget|ramses}
+   to produce the final IC file for gadget or ramses
+
+   
+

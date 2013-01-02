@@ -196,9 +196,11 @@ int main(int argc, char * argv[]) {
     init_filter();
 
     ROOTONLY {
-        char * fname = g_strdup_printf("%s/filters-%d", CB.datadir, CB.IC.Nmesh);
-        dump_filter(fname);
-        free(fname);
+        if(!CB.F.INDEX) {
+            char * fname = g_strdup_printf("%s/filters-%d", CB.datadir, CB.IC.Nmesh);
+            dump_filter(fname);
+            free(fname);
+        }
     }
 
     char * blocks[] = {"region", "index", "dispx", "dispy", "dispz", "delta"};
