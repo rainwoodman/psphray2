@@ -1,31 +1,38 @@
 [IO]
+# used as a scratch space for intermediate disp dump files
 datadir = datadir
-inputbase = datadir/snapshot_%03d
-#inputbase = /home/yfeng1/snapdir_%03d/snapshot_%03d.%d
-snapbase = datadir/snapshot_%03d_rt_%03d
-SnapNumMajorBegin = 0
-SnapNumMajorEnd = 1
-#SnapNumMajorBegin = 296
-#SnapNumMajorEnd = 297
-NumReader = 4
-
-[Domain]
-MemAllocFactor=4
-NodeSplitThresh=1
-SubDomainsPerTask=16
 
 [IC]
 Seed = 181170
 BoxSize = 250
+# beginning time 
 a = 0.00625
 Sigma8 = 0.8
+WhichSpectrum=1
+PrimordialIndex=0.96
+ShapeGamma=0.2
 
 [Levels]
+# Nmesh, scale region size factor,[ size reduction factor]
 Level1 = 16, 0
 Level2 = 32, 2.0
 Level3 = 64, 1.0
 
 [Regions]
+# center x, y, z; size x[, y, z]
 Zoom1 = 20,200,200; 50
 Zoom2 = 200,200,230; 50
 
+[Cosmology]
+h=0.72
+H=0.1
+G=43007.1
+C=300000
+OmegaB=0.044
+OmegaM=0.26
+OmegaL=0.74
+
+[Unit]
+UnitLength_in_cm=3.0856779999999998e+21
+UnitMass_in_g=1.9890000000000001e+43
+UnitVelocity_in_cm_per_s=100000
