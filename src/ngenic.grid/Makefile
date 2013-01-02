@@ -21,4 +21,4 @@ ngenic.grid: $(OBJECTS)
 clean: 
 	rm -rf $(OBJECTS) ngenic.grid
 Makefile.local: Makefile.local.template
-	cp $< $@
+	if ! [ -f $@ ]; then cp $< $@; else echo Makefile.local exsits; fi
