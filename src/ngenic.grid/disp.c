@@ -1,5 +1,6 @@
 #include <glib.h>
 #include <gsl/gsl_rng.h>
+#include <stdint.h>
 #include "mpiu.h"
 #include "commonblock.h"
 #include <string.h>
