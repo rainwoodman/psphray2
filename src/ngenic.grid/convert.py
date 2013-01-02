@@ -1,6 +1,7 @@
 import ConfigParser
 import argparse
 import numpy
+import os.path
 
 parser = argparse.ArgumentParser()
 parser.add_argument("paramfile", help="use the -used file generated from genic")
@@ -168,22 +169,32 @@ def ramses():
   boxsize = args.BoxSize * fac
   for i, Nmesh in enumerate(args.Levels):
     header = numpy.zeros(None, RHEADER)
-    header['np'] = args.Meta[Nmesh]['Size'][0]
+    if args.Scale[Nmesh] == 0:
+      header['np'][:] = Nmesh
+      header['xo'][:] = 0
+      mask = None
+    else:
+      header['np'][:] = args.Meta[Nmesh]['Size'][0]
+      header['xo'][:] = header['dx'] * args.Meta[Nmesh]['Offset'][0]
+      r = readblock(Nmesh, 'region', 'u1')
+      mask = r == 0
     header['dx'] = boxsize / Nmesh
-    header['xo'][:] = header['dx'] * args.Meta[Nmesh]['Offset'][0]
     header['astart'] = args.a
     header['omegam'] = args.OmegaM
     header['omegav'] = args.OmegaL
     header['h0'] = args.h * 100.0
+    print Nmesh, header
 
     delta = readblock(Nmesh, 'delta', 'f4')
+    if mask is not None: delta = delta[mask]
     write_ramses(header, Nmesh, 'deltab', delta)
     delta = None
     for i, block in enumerate(['dispx', 'dispy', 'dispz']):
       disp = readblock(Nmesh, block, 'f4')
+      if mask is not None: disp = disp[mask]
       disp *= fac
       write_ramses(header, Nmesh, block, disp)
-      disp /= vfact
+      disp /= args.Meta[Nmesh]['vfact']
       write_ramses(header, Nmesh, ['velcx', 'velcy', 'velcz'][i], disp)
 
 def gadget():
