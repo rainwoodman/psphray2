@@ -1,0 +1,8 @@
+GSL_LIBS=-lgsl -lgslcblas
+GSL_INC=
+FFTW_LIBS=-lfftw3_mpi -lfftw3
+FFTW_INC=
+GLIB_INC=-I../../GLIB-STATIC/include/glib-2.0 -I../../GLIB-STATIC/lib/glib-2.0/include/
+GLIB_LIBS=-L../../GLIB-STATIC/lib -lglib-2.0
+CC = mpiicc -g
+
