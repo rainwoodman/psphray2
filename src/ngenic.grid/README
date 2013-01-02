@@ -10,6 +10,7 @@ To generate an IC, three steps shall be done:
    for each desired mesh size(Nmesh) with MPI.
    this step calculates the FFT and dump the displacement field
    of selected regions at given sizes and positions.
+   the computer needs to hold the entire FFT grid of the largest Nmesh
 
 2. On the same super computer, with a free small node attached 
    to the same filesystem, run
@@ -18,10 +19,10 @@ To generate an IC, three steps shall be done:
    (for the base level Nmesh this code will fail)
    this step creates the index of the points dumped in the first step
 
-3. On a large shared memory machine (enough to hold an entire zoom IC)
+3. On a large shared memory machine, enough memory 
+   to hold the entire zoom IC * ~2,
    run 
    python convert.py paramfile {gadget|ramses}
    to produce the final IC file for gadget or ramses
 
-   
 
