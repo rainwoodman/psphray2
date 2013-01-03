@@ -294,11 +294,14 @@ def gadget():
       Npar = len(data)
   
       header['N'][ptype] = Npar
+      usemasstab = numpy.sum([args.DMptype[n] == ptype for n in args.Levels]) == 1
       if args.MakeGas[Nmesh]:
         header['N'][0] = Npar
-        header['mass'][ptype] = (args.OmegaM -args.OmegaB) * critical_mass
+        if usemasstab:
+          header['mass'][ptype] = (args.OmegaM -args.OmegaB) * critical_mass
       else:
-        header['mass'][ptype] = args.OmegaM * critical_mass
+        if usemasstab:
+          header['mass'][ptype] = args.OmegaM * critical_mass
   
       header['Nfiles'] = len(args.Levels)
   
@@ -339,12 +342,22 @@ def gadget():
       id = None
   
       # mass
-      if makegas:
-        mass = numpy.empty(Npar, dtype='f4')
-        mass[:] = args.OmegaB * critical_mass
+      if usemasstab:
+        if makegas:
+          mass = numpy.empty(Npar, dtype='f4')
+          mass[:] = args.OmegaB * critical_mass
+          writerecord(icfile, mass)
+          mass = None 
+      else:
+        if makegas:
+          mass = numpy.empty(Npar + Npar, dtype='f4')
+          mass[:Npar] = args.OmegaB * critical_mass
+          mass[Npar:] = (args.OmegaM - args.OmegaB) * critical_mass
+        else:
+          mass = numpy.empty(Npar, dtype='f4')
+          mass[:Npar] = args.OmegaM * critical_mass
         writerecord(icfile, mass)
         mass = None 
-      
       # ie ( all zeros)
       if makegas:
         ie = numpy.zeros(Npar, dtype='f4')
@@ -379,13 +392,17 @@ def gadget():
     H[Nmesh] = write_gadget(i, data)
 
   Ntot = numpy.zeros(6, dtype='i8')
+  masstab = numpy.zeros(6, dtype='f8')
+
   for Nmesh in args.Levels:
     header = H[Nmesh]
     Ntot += header['N']
-
-  print Ntot
+    mask = header['mass'] != 0
+    masstab[mask] = header['mass'][mask]
+  print 'total particles written', Ntot
   for i, Nmesh in enumerate(args.Levels):
     header = H[Nmesh]
+    header['mass'] = masstab
     header['Ntot_low'][:] = (Ntot & 0xffffffff)
     header['Ntot_high'][:] = (Ntot >> 32)
     print Nmesh, header['N']
