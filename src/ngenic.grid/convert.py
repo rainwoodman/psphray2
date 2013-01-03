@@ -301,7 +301,7 @@ def gadget():
       if args.MakeGas[Nmesh]:
         header['N'][0] = Npar
         if usemasstab:
-          header['mass'][ptype] = (args.OmegaM -args.OmegaB) * critical_mass
+          header['mass'][ptype] = (args.OmegaM - args.OmegaB) * critical_mass
       else:
         if usemasstab:
           header['mass'][ptype] = args.OmegaM * critical_mass
