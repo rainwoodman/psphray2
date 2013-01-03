@@ -46,10 +46,19 @@ def parseargs(parser):
   
   args.Scale = {}
   args.Meta = {}
+  args.DMptype = {}
   for name, value in config.items("Levels"):
-     n, s = [float(t) for t in value.replace(';', ',').split(',')]
+     sp = [float(t) for t in value.replace(';', ',').split(',')]
+     if len(sp) == 2:
+       n, s = sp
+       p = 1
+     elif len(sp) == 3:
+       n, s, p = sp
+     else:
+       raise 'paramfile format error, need 2/3 entries per Level [Levels]'
      Levels.append(n)
      args.Scale[n] = s
+     args.DMptype[n] = p
      args.Meta[n] = read_meta(n, args.datadir)
 
   args.Levels = numpy.array(Levels, dtype='i8')
@@ -248,7 +257,13 @@ def gadget():
         mask2 |= (dis < 1.0).all(axis=-1)
     return mask2
 
-  def write_gadget(data, Nmesh, makegas, ptype):
+  def rewrite_header(i, header):
+    with file('%s.%d' % (args.prefix, i), 'r+') as icfile:
+      writerecord(icfile, header)
+    
+  def write_gadget(data, i, makegas):
+    Nmesh = args.Levels[i]
+    ptype = args.DMptype[Nmesh]
     with file('%s.%d' % (args.prefix, i), 'w') as icfile:
       critical_mass = 3 * args.H ** 2 / (8 * numpy.pi * args.G) * (args.BoxSize / Nmesh) ** 3
   
@@ -262,10 +277,8 @@ def gadget():
       Npar = len(data)
   
       header['N'][ptype] = Npar
-      header['Ntot_low'][ptype] = Npar
       if makegas:
         header['N'][0] = Npar
-        header['Ntot_low'][0] = Npar
         header['mass'][ptype] = (args.OmegaM -args.OmegaB) * critical_mass
       else:
         header['mass'][ptype] = args.OmegaM * critical_mass
@@ -320,7 +333,9 @@ def gadget():
         ie = numpy.zeros(Npar, dtype='f4')
         writerecord(icfile, ie)
         ie = None
+    return header
 
+  H = {}
   for i, Nmesh in enumerate(args.Levels):
     print i, Nmesh
     data = setup_level(Nmesh)
@@ -341,12 +356,23 @@ def gadget():
 
     if i != len(args.Levels) - 1:
       makegas = False
-      ptype = 2
     else:
       makegas = True
-      ptype = 1
 
-    write_gadget(data, Nmesh, makegas, ptype)
+    H[Nmesh] = write_gadget(data, i, makegas)
+
+  Ntot = numpy.zeros(6, dtype='i8')
+  for Nmesh in args.Levels:
+    header = H[Nmesh]
+    Ntot += header['N']
+
+  print Ntot
+  for i, Nmesh in enumerate(args.Levels):
+    header = H[Nmesh]
+    header['Ntot_low'][:] = (Ntot & 0xffffffff)
+    header['Ntot_high'][:] = (Ntot >> 32)
+    print Nmesh, header['Ntot_low']
+    rewrite_header(i, header)
 
 def main():
   if args.format == 'gadget':

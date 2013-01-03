@@ -130,8 +130,8 @@ static void paramfile_read(char * filename) {
         char * args = g_key_file_get_string(keyfile, "Levels", keys[i], &error);
         char ** sp = g_strsplit_set(args, ";,", -1);
         int length = g_strv_length(sp);
-        if(length != 2) {
-            g_error("a level must have 2 entries, Nmesh and scaling factor");
+        if(length < 2) {
+            g_error("a level must have 2+ entries, Nmesh scaling factor, and optionally dm ptype");
         }
         if(atoi(sp[0]) == CB.IC.Nmesh) {
             CB.IC.Scale = atof(sp[1]);
