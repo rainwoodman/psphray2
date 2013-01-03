@@ -8,6 +8,7 @@ parser.add_argument("paramfile", help="use the -used file generated from genic")
 parser.add_argument("format", choices=['gadget', 'ramses'])
 parser.add_argument("-o", "--prefix", help="outputprefix of the IC files", default="IC")
 parser.add_argument("-q", '--cubic', action='store_true', default=False)
+parser.add_argument('--no-displacement', dest='nodisp', help="do not displace position", action='store_true', default=False)
 
 def parseargs(parser):
   args = parser.parse_args()
@@ -312,7 +313,8 @@ def gadget():
       # position
       pos = numpy.float32(data['gps']) * args.BoxSize
       pos /= Nmesh
-      pos += data['disp']
+      if not args.nodisp:
+        pos += data['disp']
       if makegas: 
         pos = numpy.tile(pos, (2, 1))
         # gas
