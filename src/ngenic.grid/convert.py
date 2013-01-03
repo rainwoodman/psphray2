@@ -279,11 +279,11 @@ def gadget():
       pos /= Nmesh
       pos += data['disp']
       if makegas: 
-        pos = numpy.tile(pos, 2)
+        pos = numpy.tile(pos, (2, 1))
         # gas
-        pos[:Npar] -= (1 - args.OmegaB / args.OmegaM) * args.BoxSize / Nmesh
+        pos[:Npar] -= 0.5 * (1 - args.OmegaB / args.OmegaM) * args.BoxSize / Nmesh
         # dm
-        pos[Npar:] += args.OmegaB / args.OmegaM * args.BoxSize / Nmesh
+        pos[Npar:] += 0.5 * args.OmegaB / args.OmegaM * args.BoxSize / Nmesh
   
       numpy.remainder(pos, args.BoxSize, pos)
   
@@ -293,7 +293,7 @@ def gadget():
       # velocity
       vel = data['disp'] * args.Meta[Nmesh]['vfact']
       if makegas: 
-        vel = numpy.tile(vel, 2)
+        vel = numpy.tile(vel, (2, 1))
       writerecord(icfile, vel)
       vel = None
   
@@ -322,6 +322,7 @@ def gadget():
         ie = None
 
   for i, Nmesh in enumerate(args.Levels):
+    print i, Nmesh
     data = setup_level(Nmesh)
     if i < len(args.Levels) - 1:
       # if there is a refine level, dig a hole from the current level
