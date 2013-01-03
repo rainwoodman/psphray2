@@ -47,23 +47,40 @@ def parseargs(parser):
   args.Scale = {}
   args.Meta = {}
   args.DMptype = {}
+  args.MakeGas = {}
   for name, value in config.items("Levels"):
-     sp = [float(t) for t in value.replace(';', ',').split(',')]
-     if len(sp) == 2:
-       n, s = sp
-       p = 1
-     elif len(sp) == 3:
-       n, s, p = sp
-     else:
-       raise 'paramfile format error, need 2/3 entries per Level [Levels]'
-     Levels.append(n)
-     args.Scale[n] = s
-     args.DMptype[n] = p
-     args.Meta[n] = read_meta(n, args.datadir)
-
+    sp = value.replace(';', ',').split(',')
+    if len(sp) == 2:
+      n, s = int(sp[0]), float(sp[1])
+      # the default is 
+      p = -1
+      g = None
+    elif len(sp) == 3:
+      n, s = int(sp[0]), float(sp[1])
+      if 'g' in sp[2]:
+        p = int(sp[2].replace('g', ''))
+        g = True
+      else:
+        p = int(sp[2])
+        g = False
+    else:
+      raise 'paramfile format error, need 2/3 entries per Level [Levels]'
+    Levels.append(n)
+    args.Scale[n] = s
+    args.DMptype[n] = p
+    args.MakeGas[n] = g
+    args.Meta[n] = read_meta(n, args.datadir)
   args.Levels = numpy.array(Levels, dtype='i8')
   args.Levels.sort()
-
+  for Nmesh in args.Levels:
+    if args.DMptype[Nmesh] == -1:
+      if Nmesh == args.Levels.max():
+        args.DMptype[Nmesh] = 1
+        args.MakeGas[Nmesh] = True
+      else:
+        args.DMptype[Nmesh] = 2
+        args.MakeGas[Nmesh] = False
+      
   return args
 
 def read_meta(Nmesh, datadir):
@@ -261,7 +278,7 @@ def gadget():
     with file('%s.%d' % (args.prefix, i), 'r+') as icfile:
       writerecord(icfile, header)
     
-  def write_gadget(data, i, makegas):
+  def write_gadget(i, data):
     Nmesh = args.Levels[i]
     ptype = args.DMptype[Nmesh]
     with file('%s.%d' % (args.prefix, i), 'w') as icfile:
@@ -277,7 +294,7 @@ def gadget():
       Npar = len(data)
   
       header['N'][ptype] = Npar
-      if makegas:
+      if args.MakeGas[Nmesh]:
         header['N'][0] = Npar
         header['mass'][ptype] = (args.OmegaM -args.OmegaB) * critical_mass
       else:
@@ -359,7 +376,7 @@ def gadget():
     else:
       makegas = True
 
-    H[Nmesh] = write_gadget(data, i, makegas)
+    H[Nmesh] = write_gadget(i, data)
 
   Ntot = numpy.zeros(6, dtype='i8')
   for Nmesh in args.Levels:
@@ -371,7 +388,7 @@ def gadget():
     header = H[Nmesh]
     header['Ntot_low'][:] = (Ntot & 0xffffffff)
     header['Ntot_high'][:] = (Ntot >> 32)
-    print Nmesh, header['Ntot_low']
+    print Nmesh, header['N']
     rewrite_header(i, header)
 
 def main():
