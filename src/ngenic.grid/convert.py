@@ -281,6 +281,8 @@ def gadget():
   def write_gadget(i, data):
     Nmesh = args.Levels[i]
     ptype = args.DMptype[Nmesh]
+    makegas = args.MakeGas[Nmesh]
+
     with file('%s.%d' % (args.prefix, i), 'w') as icfile:
       critical_mass = 3 * args.H ** 2 / (8 * numpy.pi * args.G) * (args.BoxSize / Nmesh) ** 3
   
@@ -383,11 +385,6 @@ def gadget():
       assert Nmesh % NmeshPrev == 0
       fillmask = dig(data, Nmesh, scale=args.Scale[Nmesh], Align=NmeshPrev)
       data = data[fillmask]
-
-    if i != len(args.Levels) - 1:
-      makegas = False
-    else:
-      makegas = True
 
     H[Nmesh] = write_gadget(i, data)
 

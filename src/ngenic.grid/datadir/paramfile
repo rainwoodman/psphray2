@@ -13,7 +13,8 @@ PrimordialIndex=0.96
 ShapeGamma=0.2
 
 [Levels]
-# Nmesh, scale region size factor,[ size reduction factor]
+# Nmesh, scale region size factor,[DMptype]
+# if DMptype has g, (eg, 1g, or 2g), gas will be made.
 Level1 = 16, 0
 Level2 = 32, 2.0
 Level3 = 64, 1.0
