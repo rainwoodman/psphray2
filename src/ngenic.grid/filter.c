@@ -44,7 +44,7 @@ intptr_t filter0(int i, int j, int k, int r) {
     int inside = 0;
     int irelpos[3];
     for(int d = 0; d < 3; d++) {
-        int dx = ipos[d] - ITop[r][d];
+        int dx = ipos[d] - IBottom[r][d];
         while (dx < 0) dx += Nmesh;
         while (dx >= Nmesh) dx -= Nmesh;
         if(dx >= ISize[r][d]) return -1;
