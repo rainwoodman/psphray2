@@ -9,16 +9,20 @@ extern double * Disp;
 extern intptr_t Local_nx;
 extern intptr_t Local_x_start;
 
-#define PR(i, j, k) Disp[(((i) - Local_x_start) * Nmesh + (j)) * (2 * (Nmesh / 2 + 1)) + (k)]
+#define PR(i, j, k) Disp[(((i) - Local_x_start) * Nsample + (j)) * (2 * (Nsample / 2 + 1)) + (k)]
 static double R0;
 static int (*IBottom)[3];
 static int (*ITop)[3];
 static int (*ISize)[3];
 static int Nmesh;
+static int Nsample;
+static int DownSample;
 double F_Omega(double a);
 
 void init_filter() {
     Nmesh = CB.IC.Nmesh;
+    DownSample = CB.IC.DownSample;
+    Nsample = Nmesh / DownSample;
     R0 = CB.BoxSize / Nmesh;
     IBottom = (int (*) [3])g_new0(int, 3 * CB.IC.NRegions);
     ITop = (int (*) [3]) g_new0(int, 3 * CB.IC.NRegions);
@@ -59,15 +63,18 @@ void filter(int ax, char * fname) {
     char buffer[BS];
     char *be = &buffer[BS];
     char *bp = buffer;
-    int i, j, k;
+    int i, j, k, dsi, dsj, dsk;
     for(i = 0; i < Nmesh; i ++) {
-        if(i < Local_x_start) continue;
-        if(i >= Local_x_start + Local_nx) continue;
+        dsi = i % Nsample;
+        if(dsi < Local_x_start) continue;
+        if(dsi >= Local_x_start + Local_nx) continue;
         for(j = 0; j < Nmesh; j ++) {
+            dsj = j % Nsample;
             for(k = 0; k < Nmesh; k ++) {
+                dsk = k % Nsample;
                 for(int r = 0; r < CB.IC.NRegions; r++) {
                     if(CB.IC.Scale == 0.0) {
-                        float data = PR(i, j, k);
+                        float data = PR(dsi, dsj, dsk);
                         * (float * ) bp = data;
                         bp += sizeof(float);
                         break;
@@ -81,7 +88,7 @@ void filter(int ax, char * fname) {
                                 * (intptr_t *) bp = index;
                                 bp += sizeof(intptr_t);
                             } else {
-                                float data = PR(i, j, k);
+                                float data = PR(dsi, dsj, dsk);
                                 * (float * ) bp = data;
                                 bp += sizeof(float);
                             }

@@ -56,7 +56,7 @@ def parseargs(parser):
       # the default is 
       p = -1
       g = None
-    elif len(sp) == 3:
+    elif len(sp) >= 3:
       n, s = int(sp[0]), float(sp[1])
       if 'g' in sp[2]:
         p = int(sp[2].replace('g', ''))

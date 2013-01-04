@@ -135,6 +135,11 @@ static void paramfile_read(char * filename) {
         }
         if(atoi(sp[0]) == CB.IC.Nmesh) {
             CB.IC.Scale = atof(sp[1]);
+            if(length == 4) {
+                CB.IC.DownSample = atoi(sp[3]);
+            } else {
+                CB.IC.DownSample = 1;
+            }
             break;
         }
         g_strfreev(sp);
