@@ -165,6 +165,13 @@ static void paramfile_read(char * filename) {
     g_key_file_free(keyfile);
 }
 
+static int decwidth(int n) {
+    g_assert(n > 0);
+    char * tmp = g_strdup_printf("%d", n-1);
+    int width = strlen(tmp);
+    g_free(tmp);
+    return width;
+}
 int main(int argc, char * argv[]) {
 
     MPI_Init(&argc, &argv);
@@ -210,16 +217,29 @@ int main(int argc, char * argv[]) {
     }
 
     char * blocks[] = {"region", "index", "dispx", "dispy", "dispz", "delta"};
-    char * tmp = g_strdup_printf("%d", NTask);
-    int width = strlen(tmp);
-    g_free(tmp);
-    for(int ax = -2; ax < 4; ax ++) {
-        if(!CB.F.INDEX && ax < 0) continue;
-        if(CB.F.INDEX && ax >=0) continue;
+    int axstart, axend;
+    if(CB.F.INDEX) {
+        axstart = -2;
+        axend = 0;
+    } else {
+        axstart = 0;
+        axend = 4;
+    }
+    int width = decwidth(NTask);
+    int dswidth = decwidth(CB.IC.DownSample);
+
+    for(int ax = axstart; ax < axend; ax ++) {
         /* -2 is the region mask and -1 is the index map, they do not need the displacment field */
+        char * fname = NULL;
         if(ax >= 0) disp(ax);
-        char * fname = g_strdup_printf("%s/%s-%d.%0*d", CB.datadir, blocks[ax + 2], CB.IC.Nmesh, width, ThisTask);
-        filter(ax, fname);
+        for(int i = 0; i < CB.IC.DownSample; i++) {
+            if(CB.IC.DownSample == 1) {
+                fname = g_strdup_printf("%s/%s-%d.%0*d", CB.datadir, blocks[ax + 2], CB.IC.Nmesh, width, ThisTask);
+            } else {
+                fname = g_strdup_printf("%s/%s-%d.%0*d-%0*d", CB.datadir, blocks[ax + 2], CB.IC.Nmesh, dswidth, i, width, ThisTask);
+            }
+            filter(ax, fname, i);
+        }
         g_free(fname);
     }
     free_disp();

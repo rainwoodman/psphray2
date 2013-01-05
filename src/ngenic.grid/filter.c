@@ -57,15 +57,15 @@ intptr_t filter0(int i, int j, int k, int r) {
     return (((intptr_t)irelpos[0] * ISize[r][1]) + irelpos[1]) * ISize[r][2] + irelpos[2];
 }
 
-void filter(int ax, char * fname) {
+void filter(int ax, char * fname, int xDownSample) {
     FILE * fp = fopen(fname, "w");
     const int BS = 1024 * 1024 * 8;
     char buffer[BS];
     char *be = &buffer[BS];
     char *bp = buffer;
     int i, j, k, dsi, dsj, dsk;
-    for(i = 0; i < Nmesh; i ++) {
-        dsi = i % Nsample;
+    for(dsi = 0; dsi < Nsample; dsi ++) {
+        i = dsi + xDownSample * Nsample;
         if(dsi < Local_x_start) continue;
         if(dsi >= Local_x_start + Local_nx) continue;
         for(j = 0; j < Nmesh; j ++) {
