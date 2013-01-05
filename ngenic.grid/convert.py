@@ -10,6 +10,10 @@ parser.add_argument("format", choices=['gadget', 'ramses'],
                help="Format of the output. \
                      gadget : to write a gadget IC, \
                      ramses : to write a ramses IC, only the first zoom region is written due to ramses limitation")
+parser.add_argument("-N", "--num-particles", 
+               help="Number of DM particles per file. \
+                     For levels with Gas the total number in a file will be twice of this",
+                    default=1024 * 1024 * 20, dest='Npar', type=int);
 parser.add_argument("-o", "--prefix", 
                help="Prefix of the IC files. \
                      Do not forget to put a filename base. \
@@ -289,16 +293,16 @@ def gadget():
         mask2 |= (dis < 1.0).all(axis=-1)
     return mask2
 
-  def rewrite_header(i, header):
-    with file('%s.%d' % (args.prefix, i), 'r+') as icfile:
+  def rewrite_header(fname, header):
+    with file(fname, 'r+') as icfile:
       writerecord(icfile, header)
     
-  def write_gadget(i, data):
+  def write_gadget(fname, data):
     Nmesh = args.Levels[i]
     ptype = args.DMptype[Nmesh]
     makegas = args.MakeGas[Nmesh]
 
-    with file('%s.%d' % (args.prefix, i), 'w') as icfile:
+    with file(fname, 'w') as icfile:
       critical_mass = 3 * args.H ** 2 / (8 * numpy.pi * args.G) * (args.BoxSize / Nmesh) ** 3
   
       header = numpy.zeros(None, GHEADER)
@@ -383,7 +387,8 @@ def gadget():
         ie = None
     return header
 
-  H = {}
+  H = []
+  fid = 0
   for i, Nmesh in enumerate(args.Levels):
     print i, Nmesh
     data = setup_level(Nmesh)
@@ -401,25 +406,27 @@ def gadget():
       assert Nmesh % NmeshPrev == 0
       fillmask = dig(data, Nmesh, scale=args.Scale[Nmesh], Align=NmeshPrev)
       data = data[fillmask]
-
-    H[Nmesh] = write_gadget(i, data)
+    nchunks = int(numpy.ceil(len(data) / (1.0 * args.Npar)))
+    datasp = numpy.array_split(data, nchunks)
+    for k in range(nchunks):
+      fname = '%s.%d' % (args.prefix, fid + k)
+      H.append((fname, write_gadget(fname, datasp[k])))
+    fid = fid + nchunks
 
   Ntot = numpy.zeros(6, dtype='i8')
   masstab = numpy.zeros(6, dtype='f8')
 
-  for Nmesh in args.Levels:
-    header = H[Nmesh]
+  for fname, header in H:
     Ntot += header['N']
     mask = header['mass'] != 0
     masstab[mask] = header['mass'][mask]
   print 'total particles written', Ntot
-  for i, Nmesh in enumerate(args.Levels):
-    header = H[Nmesh]
+  for fname, header in H:
     header['mass'] = masstab
     header['Ntot_low'][:] = (Ntot & 0xffffffff)
     header['Ntot_high'][:] = (Ntot >> 32)
-    print Nmesh, header['N']
-    rewrite_header(i, header)
+    print fname, header['N']
+    rewrite_header(fname, header)
 
 def main():
   if args.format == 'gadget':
