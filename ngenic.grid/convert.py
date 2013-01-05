@@ -2,7 +2,7 @@ import ConfigParser
 import argparse
 import numpy
 import os.path
-
+import StringIO
 parser = argparse.ArgumentParser(description="Assembling IC files from raw dumps")
 parser.add_argument("paramfile", 
                help="the same paramfile fed to ngenic.grid.")
@@ -31,6 +31,20 @@ parser.add_argument('--no-displacement', dest='nodisp',
 def parseargs(parser):
   args = parser.parse_args()
   config = ConfigParser.ConfigParser()
+  config.read(StringIO.StringIO("""
+         [Cosmology]
+         h = 0.72
+         H = 0.1
+         G = 43007.1
+         C = 3e5
+         OmegaB = 0.044
+         OmegaM = 0.26
+         OmegaL = 0.74
+         [Units]
+         UnitLength_in_cm = 3.085678e21
+         UnitMass_in_g = 1.989e43
+         UnitVelocity_in_cm_per_s = 1e5
+"""))
   config.read(args.paramfile)
 
   args.datadir = config.get("IO", "datadir")
