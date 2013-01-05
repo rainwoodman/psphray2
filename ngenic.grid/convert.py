@@ -3,12 +3,26 @@ import argparse
 import numpy
 import os.path
 
-parser = argparse.ArgumentParser()
-parser.add_argument("paramfile", help="use the -used file generated from genic")
-parser.add_argument("format", choices=['gadget', 'ramses'])
-parser.add_argument("-o", "--prefix", help="outputprefix of the IC files", default="IC")
-parser.add_argument("-q", '--cubic', action='store_true', default=False)
-parser.add_argument('--no-displacement', dest='nodisp', help="do not displace position", action='store_true', default=False)
+parser = argparse.ArgumentParser(description="Assembling IC files from raw dumps")
+parser.add_argument("paramfile", 
+               help="the same paramfile fed to ngenic.grid.")
+parser.add_argument("format", choices=['gadget', 'ramses'], 
+               help="Format of the output. \
+                     gadget : to write a gadget IC, \
+                     ramses : to write a ramses IC, only the first zoom region is written due to ramses limitation")
+parser.add_argument("-o", "--prefix", 
+               help="Prefix of the IC files. \
+                     Do not forget to put a filename base. \
+                     gadget : IC.%%d, one file per zoom level. \
+                     ramses : IC-%%d-%%s, several files per zoom level",
+                                  default="IC")
+parser.add_argument("-q", '--cubic', 
+               help="Use an axis-aligned box for the zoom region, instead of spheres", 
+                   action='store_true', default=False)
+parser.add_argument('--no-displacement', dest='nodisp', 
+                help="Do not displace the position of particles. \
+                      Physics will be corrupted. Do not use", 
+                      action='store_true', default=False)
 
 def parseargs(parser):
   args = parser.parse_args()
