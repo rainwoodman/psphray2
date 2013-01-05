@@ -224,6 +224,9 @@ void fill_PK(int ax) {
 
 
 void disp(int ax) {
+    g_message("filling axis %d", ax);
     fill_PK(ax);
+    g_message("fft axis %d", ax);
     fftw_execute(InversePlan); 
+    g_message("done fft axis %d", ax);
 }
