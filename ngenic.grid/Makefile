@@ -1,15 +1,16 @@
 include Makefile.local
 
-CFLAGS = -I.. -I. $(GLIB_INC) $(GSL_INC) $(FFTW_INC)
+CFLAGS = -I../src -I. $(GLIB_INC) $(GSL_INC) $(FFTW_INC)
 LDFLAGS =
 
 SOURCES = \
     main.c \
-    ../mpiu.c \
+    ../src/mpiu.c \
     commonblock.c \
     power.c \
     disp.c \
-	filter.c
+    filter.c
+
 HEADERS =
 OBJECTS = $(SOURCES:.c=.o)
 .c.o:
@@ -21,4 +22,4 @@ ngenic.grid: $(OBJECTS)
 clean: 
 	rm -rf $(OBJECTS) ngenic.grid
 Makefile.local: Makefile.local.template
-	if ! [ -f $@ ]; then cp $< $@; else echo Makefile.local exsits; fi
+	@if ! [ -f $@ ]; then cp $< $@; else if ! diff -y $< $@; then echo please edit and save Makefile.local; fi; fi
