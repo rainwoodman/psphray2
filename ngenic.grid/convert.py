@@ -338,8 +338,6 @@ def gadget():
         if usemasstab:
           header['mass'][ptype] = args.OmegaM * critical_mass
   
-      header['Nfiles'] = len(args.Levels)
-  
       writerecord(icfile, header)
   
       # position
@@ -439,6 +437,8 @@ def gadget():
     header['mass'] = masstab
     header['Ntot_low'][:] = (Ntot & 0xffffffff)
     header['Ntot_high'][:] = (Ntot >> 32)
+    header['Nfiles'] = len(H)
+  
     print fname, header['N']
     rewrite_header(fname, header)
 
