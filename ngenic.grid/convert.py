@@ -161,7 +161,7 @@ def readblock(Nmesh, block, dtype):
 
 def setup_innerlevel(Nmesh):
   index = readblock(Nmesh, 'index', 'i8')
-  r = readblock(Nmesh, 'region', 'u1')
+  r = readblock(Nmesh, 'region', 'u4')
   dispx = readblock(Nmesh, 'dispx', 'f4')
   dispy = readblock(Nmesh, 'dispy', 'f4')
   dispz = readblock(Nmesh, 'dispz', 'f4')
