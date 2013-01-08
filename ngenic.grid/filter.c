@@ -114,7 +114,7 @@ void filter(int ax, char * fname, int xDownSample) {
         cross0[icr].index = 0;
     }
     const int BS = 1024 * 1024 * 8;
-    char buffer[BS];
+    char *buffer = g_malloc(BS);
     char *be = &buffer[BS];
     char *bp = buffer;
     int i, j, k, dsi, dsj, dsk;
@@ -174,6 +174,7 @@ void filter(int ax, char * fname, int xDownSample) {
     g_free(crossz);
     g_free(crossy);
     g_free(crossx);
+    g_free(buffer);
 }
 
 void dump_filter(char * fname) {
@@ -183,7 +184,6 @@ void dump_filter(char * fname) {
     double vel_prefac = CB.a * hubble_a * F_Omega(CB.a);
     vel_prefac /= sqrt(CB.a);   /* converts to Gadget velocity */
     fprintf(fp, "vfact = %g\n", vel_prefac);
-    fprintf(fp, "NTask = %d\n", NTask);
     fprintf(fp, "NRegion = %d\n", CB.IC.NRegions);
     for(int r = 0; r < CB.IC.NRegions; r++) {
         fprintf(fp, "Offset[%d] = [%d, %d, %d]\n", r, 

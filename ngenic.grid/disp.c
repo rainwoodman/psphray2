@@ -15,7 +15,7 @@ static fftw_plan InversePlan;
 static size_t localsize;
 
 static uint32_t * seedtable;
-static int Nmesh, Nsample, DownSample;
+static int Nmesh, Nsample, DownSample, NmeshBefore;
 static double BoxSize;
 static int SphereMode;
 static double Dplus;
@@ -27,6 +27,7 @@ extern double GrowthFactor(double, double);
 
 void init_disp() {
     Nmesh = CB.IC.Nmesh;
+    NmeshBefore = CB.IC.NmeshBefore;
     DownSample = CB.IC.DownSample;
     Nsample = CB.IC.Nmesh / CB.IC.DownSample;
     BoxSize = CB.BoxSize; 
@@ -36,7 +37,7 @@ void init_disp() {
 
     fftw_mpi_init();
 
-    localsize = fftw_mpi_local_size_3d(Nsample, Nsample, Nsample, MPI_COMM_WORLD, &Local_nx, &Local_x_start);
+    localsize = fftw_mpi_local_size_3d(Nsample, Nsample, Nsample / 2+1, MPI_COMM_WORLD, &Local_nx, &Local_x_start);
 
     gsl_rng * random_generator = gsl_rng_alloc(gsl_rng_ranlxd1);
 
@@ -98,15 +99,19 @@ void fill_PK(int ax) {
         if(!Cdata) {
             g_error("memory allocation failed");
         }
+        MPI_Barrier(MPI_COMM_WORLD);
+        size_t llocalsize = localsize;
+        MPI_Allreduce(MPI_IN_PLACE, &llocalsize, 1, MPI_LONG, MPI_MAX, MPI_COMM_WORLD);
         ROOTONLY {
-            g_message("allocated %td byte on Task %d for FFT's", localsize * sizeof(double) * 2, 0);
+            g_message("max allocation %ld bytes for FFT, Nsample=%d", llocalsize * sizeof(double) * 2, Nsample);
         }
         Disp = (double*) Cdata;
         /* In place b/c Cdata is an alias of Disp */
-        InversePlan = fftw_mpi_plan_dft_c2r_3d(Nsample, Nsample, Nsample, Cdata, Disp, MPI_COMM_WORLD, FFTW_ESTIMATE);
+        InversePlan = fftw_mpi_plan_dft_c2r_3d(Nsample, Nsample, Nsample, Cdata, Disp, MPI_COMM_WORLD, FFTW_MEASURE);
     }
 
-    memset(Cdata, 0, Local_nx * Nsample * (Nsample / 2 + 1) * sizeof(fftw_complex));
+    memset(Cdata, 0, (size_t) Local_nx * Nsample * (Nsample / 2 + 1) * sizeof(fftw_complex));
+
     gsl_rng * random_generator = gsl_rng_alloc(gsl_rng_ranlxd1);
 
     for(i = 0, dsi = 0; i < Nmesh; i += DownSample, dsi++) {
@@ -161,15 +166,34 @@ void fill_PK(int ax) {
                 double kmag2 = kvec[0] * kvec[0] + kvec[1] * kvec[1] + kvec[2] * kvec[2];
                 double kmag = sqrt(kmag2);
 
+                /* if this level has been downsampled, 
+                 * remove the power from lower freqs, as they will
+                 * be take from the lower level mesh.
+                 * and assembled in convert.py. this has to be done
+                 * to preserve the powerspectrum 
+                 *
+                 * In theory, for the no dowm sampling modes we shall
+                 * also do this on the DownSampling = 1 meshes.
+                 * however, the without a fourier interpolation(we do 
+                 * nearest neighbour in conver.py)
+                 * the density fluctuation won't be exactly the same;
+                 * there is no need to pay this price.
+                 * */
                 if(SphereMode == 1) {
-                    if(kmag / K0 > Nmesh / 2) continue;
+                    if(kmag / K0 > Nmesh / 2 ||
+                    (DownSample > 1 && kmag / K0 >= NmeshBefore / 2)) 
+                        continue;
                 } else {
-                    if(fabs(kvec[0]) / K0 > Nmesh / 2)
-                        continue;
-                    if(fabs(kvec[1]) / K0 > Nmesh / 2)
-                        continue;
-                    if(fabs(kvec[2]) / K0 > Nmesh / 2)
-                        continue;
+                    int d;
+                    for(d = 0; d < 3; d++) {
+                        if(fabs(kvec[d]) / K0 > Nmesh / 2 ||
+                        (DownSample > 1 && 
+                           fabs(kvec[d]) / K0 >= NmeshBefore / 2)) {
+                            break;
+                        }
+                    }
+                    /* if any of the dimension is out of bound */
+                    if (d < 3) continue;
                 }
 
                 double p_of_k = PowerSpec(kmag) * -log(ampl);
@@ -224,9 +248,9 @@ void fill_PK(int ax) {
 
 
 void disp(int ax) {
-    g_message("filling axis %d", ax);
+    ROOTONLY g_message("filling axis %d", ax);
     fill_PK(ax);
-    g_message("fft axis %d", ax);
+    ROOTONLY g_message("fft axis %d", ax);
     fftw_execute(InversePlan); 
-    g_message("done fft axis %d", ax);
+    ROOTONLY g_message("done fft axis %d", ax);
 }

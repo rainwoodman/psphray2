@@ -81,27 +81,36 @@ def parseargs(parser):
   args.Meta = {}
   args.DMptype = {}
   args.MakeGas = {}
+  args.DownSample = {}
   for name, value in config.items("Levels"):
     sp = value.replace(';', ',').split(',')
-    if len(sp) == 2:
+    good = False
+    if len(sp) >= 2:
       n, s = int(sp[0]), float(sp[1])
       # the default is 
       p = -1
       g = None
-    elif len(sp) >= 3:
-      n, s = int(sp[0]), float(sp[1])
+      d = 1
+      good = True
+    if len(sp) >= 3:
       if 'g' in sp[2]:
         p = int(sp[2].replace('g', ''))
         g = True
       else:
         p = int(sp[2])
         g = False
-    else:
-      raise 'paramfile format error, need 2/3 entries per Level [Levels]'
+      good = True
+    if len(sp) == 4:
+      d = int(sp[3])
+    else: good = False
+
+    if not good:
+      raise 'paramfile format error, need 2/3/4 entries per Level [Levels]'
     Levels.append(n)
     args.Scale[n] = s
     args.DMptype[n] = p
     args.MakeGas[n] = g
+    args.DownSample[n] = d
     args.Meta[n] = read_meta(n, args.datadir)
   args.Levels = numpy.array(Levels, dtype='i8')
   args.Levels.sort()
@@ -139,24 +148,34 @@ def setup_level(Nmesh):
     return setup_innerlevel(Nmesh)
   
 def readblock(Nmesh, block, dtype):
-  meta = args.Meta[Nmesh]
-  NTask = meta['NTask']
-  ZeroPadding = int(numpy.ceil(numpy.log10(NTask+0.1)))
+  header = {}
+  exec(
+    file('%s/%s-%d.header' % (args.datadir, block, Nmesh)).read(), 
+    header)
+  NTask = header['NTask']
+  DownSample = header['DownSample']
+  assert DownSample == args.DownSample[Nmesh]
+
+  width1 = len(str(DownSample))
+  width2 = len(str(NTask))
   content = []
-  # if there is a single file version, then return it
-  # mainly for index and regions files 
-  fname = '%s/%s-%d.0' %(args.datadir, block, Nmesh)
-  if os.path.exists(fname):
-      return numpy.fromfile(fname, dtype)
 
-  for fid in range(NTask):
-    fname = '%s/%s-%d.%0*d' %(
+  f = 0
+  for i in range(DownSample):
+    for fid in range(NTask):
+      if DownSample > 1:
+        fname = '%s/%s-%d.%0*d-%0*d' %(
                  args.datadir, 
-                 block, Nmesh, ZeroPadding, fid)
-    if os.path.exists(fname):
-      content.append(numpy.fromfile(fname, dtype))
-    #skip the tasks that do not dump any files
-
+                 block, Nmesh, width1, i, width2, fid)
+      else:
+        fname = '%s/%s-%d.%0*d' %(
+                 args.datadir, 
+                   block, Nmesh, width2, fid)
+      if os.path.exists(fname):
+        content.append(numpy.fromfile(fname, dtype))
+        f = f + 1
+      #skip the tasks that do not dump any files
+  print Nmesh, block, f, 'files read'
   return numpy.concatenate(content)
 
 def setup_innerlevel(Nmesh):
@@ -410,6 +429,17 @@ def gadget():
       NmeshNext = args.Levels[i + 1]
       assert NmeshNext % Nmesh == 0
       holemask = dig(data, Nmesh, scale=args.Scale[NmeshNext])
+      if args.DownSample[NmeshNext] > 1:
+        # downsample levels need to carry on the interpolation
+        # of previous level
+        # we use the corresponding upper level values.
+        # It really should have been a fourier interploation.
+        dataPrev = data[holemask] 
+        indexPrev = numpy.ravel_multi_index(dataPrev['gps'].T, (Nmesh, Nmesh, Nmesh))
+        arg = indexPrev.argsort()
+        dataPrev = dataPrev[arg]
+        indexPrev = indexPrev[arg]
+        arg = None
       data = data[~holemask]
     if i > 0:
       # if there is a parent level, clip the current level
@@ -418,6 +448,19 @@ def gadget():
       assert Nmesh % NmeshPrev == 0
       fillmask = dig(data, Nmesh, scale=args.Scale[Nmesh], Align=NmeshPrev)
       data = data[fillmask]
+      if args.DownSample[Nmesh] > 1:
+        # the DownSample interpolation.
+        # first find the corresponding lowerlevel points
+        index = numpy.ravel_multi_index(data['gps'].T / (Nmesh / NmeshPrev),
+                   (NmeshPrev, NmeshPrev, NmeshPrev))
+        arg = indexPrev.searchsorted(index, 'left')
+        assert (indexPrev[arg] == index).all()
+        # then add them to the current level
+        data['disp'] += dataPrev['disp'][arg]
+        data['delta'] += dataPrev['delta'][arg]
+        arg = None
+        index = None
+
     nchunks = int(numpy.ceil(len(data) / (1.0 * args.Npar)))
     datasp = numpy.array_split(data, nchunks)
     for k in range(nchunks):

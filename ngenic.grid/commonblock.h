@@ -42,6 +42,7 @@ typedef struct {
     struct {
         int Seed;
         int Nmesh;
+        int NmeshBefore;
         int DownSample;
         int WhichSpectrum;
         double PrimordialIndex;

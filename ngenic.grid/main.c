@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <signal.h>
+#include <execinfo.h>
 #include "mpiu.h"
 #include "paramfile.inc"
 #include "commonblock.h"
@@ -9,6 +11,8 @@
 extern void init_power(void);
 extern void init_disp(void);
 extern void init_filter(void);
+extern void disp(int ax);
+extern void filter(int ax, char* fname, int i);
 
 void abort() {
     MPI_Abort(MPI_COMM_WORLD, 1);
@@ -19,6 +23,7 @@ void print_handler(const gchar * string) {
     fputs(string, stdout);
     fflush(stdout);
 }
+
 static char ** args = NULL;
 
 static GOptionEntry entries[] =
@@ -133,7 +138,8 @@ static void paramfile_read(char * filename) {
         if(length < 2) {
             g_error("a level must have 2+ entries, Nmesh scaling factor, and optionally dm ptype");
         }
-        if(atoi(sp[0]) == CB.IC.Nmesh) {
+        int Nmesh = atoi(sp[0]);
+        if(Nmesh == CB.IC.Nmesh) {
             CB.IC.Scale = atof(sp[1]);
             if(length == 4) {
                 CB.IC.DownSample = atoi(sp[3]);
@@ -141,6 +147,10 @@ static void paramfile_read(char * filename) {
                 CB.IC.DownSample = 1;
             }
             break;
+        } else {
+            if(Nmesh < CB.IC.Nmesh && Nmesh > CB.IC.NmeshBefore) {
+                CB.IC.NmeshBefore = Nmesh;
+            }
         }
         g_strfreev(sp);
         g_free(args);
@@ -178,6 +188,8 @@ int main(int argc, char * argv[]) {
     g_log_set_default_handler(log_handler, NULL);
     g_set_print_handler(print_handler);
     mpiu_init();
+
+    struct sigaction sa;
 
     ROOTONLY {
         GError * error = NULL;
@@ -233,6 +245,14 @@ int main(int argc, char * argv[]) {
         char * fname = NULL;
         if(ax >= 0) disp(ax);
         for(int i = 0; i < CB.IC.DownSample; i++) {
+            ROOTONLY {
+                fname = g_strdup_printf("%s/%s-%d.header", CB.datadir, blocks[ax + 2], CB.IC.Nmesh);
+                FILE * fp = fopen(fname, "w");
+                fprintf(fp, "NTask = %d\n", NTask);
+                fprintf(fp, "DownSample = %d\n", CB.IC.DownSample);
+                fclose(fp);
+                g_free(fname);
+            }
             if(CB.IC.DownSample == 1) {
                 fname = g_strdup_printf("%s/%s-%d.%0*d", CB.datadir, blocks[ax + 2], CB.IC.Nmesh, width, ThisTask);
             } else {
@@ -241,6 +261,7 @@ int main(int argc, char * argv[]) {
             filter(ax, fname, i);
         }
         g_free(fname);
+        MPI_Barrier(MPI_COMM_WORLD);
     }
     free_disp();
     MPI_Finalize();
