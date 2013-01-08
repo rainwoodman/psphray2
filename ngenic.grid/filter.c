@@ -100,7 +100,7 @@ intptr_t filter0(int i, int j, int k, int r) {
 }
 
 void filter(int ax, char * fname, int xDownSample) {
-    FILE * fp = fopen(fname, "w");
+    FILE * fp = NULL;
     cross_t * cross0 = g_new0(cross_t, CB.IC.NRegions);
     cross_t * crossx = g_new0(cross_t, CB.IC.NRegions);
     cross_t * crossy = g_new0(cross_t, CB.IC.NRegions);
@@ -139,6 +139,7 @@ void filter(int ax, char * fname, int xDownSample) {
                     * (float * ) bp = data;
                     bp += sizeof(float);
                     if(bp == be) {
+                        if(!fp) fp = fopen(fname, "w");
                         fwrite(buffer, BS, 1, fp);
                         bp = buffer;
                     }
@@ -159,6 +160,7 @@ void filter(int ax, char * fname, int xDownSample) {
                         }
                     }
                     if(bp == be) {
+                        if(!fp) fp = fopen(fname, "w");
                         fwrite(buffer, BS, 1, fp);
                         bp = buffer;
                     }
@@ -167,9 +169,10 @@ void filter(int ax, char * fname, int xDownSample) {
         }
     }
     if(bp != buffer) {
+        if(!fp) fp = fopen(fname, "w");
         fwrite(buffer, bp - buffer, 1, fp);
     }
-    fclose(fp);
+    if(fp) fclose(fp);
     g_free(cross0);
     g_free(crossz);
     g_free(crossy);
