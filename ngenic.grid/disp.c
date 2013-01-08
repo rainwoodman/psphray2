@@ -43,33 +43,37 @@ void init_disp() {
 
     gsl_rng_set(random_generator, CB.IC.Seed);
 
-    seedtable = g_new0(uint32_t, Nmesh * Nmesh);
+    seedtable = g_new0(uint32_t, Nsample * Nsample);
+    uint32_t junk;
+    #define ST(i, j) (((i) % DownSample == 0) && ((j) % DownSample == 0)?\
+              &seedtable[(i) / DownSample * Nsample + (j) / DownSample]:\
+              &junk)
     for(int i = 0; i < Nmesh / 2; i++)
     {
         int j;
+        for(j = 0; j < i; j++) {
+            ST(i, j)[0] = 0x7fffffff * gsl_rng_uniform(random_generator);
+        }
+        for(j = 0; j < i + 1; j++) {
+            ST(j, i)[0] = 0x7fffffff * gsl_rng_uniform(random_generator);
+        }
         for(j = 0; j < i; j++)
-            seedtable[i * Nmesh + j] = 0x7fffffff * gsl_rng_uniform(random_generator);
+            ST((Nmesh - 1 - i), j)[0] = 0x7fffffff * gsl_rng_uniform(random_generator);
 
         for(j = 0; j < i + 1; j++)
-            seedtable[j * Nmesh + i] = 0x7fffffff * gsl_rng_uniform(random_generator);
+            ST((Nmesh - 1 - j), i)[0] = 0x7fffffff * gsl_rng_uniform(random_generator);
 
         for(j = 0; j < i; j++)
-            seedtable[(Nmesh - 1 - i) * Nmesh + j] = 0x7fffffff * gsl_rng_uniform(random_generator);
+            ST(i, (Nmesh - 1 - j))[0] = 0x7fffffff * gsl_rng_uniform(random_generator);
 
         for(j = 0; j < i + 1; j++)
-            seedtable[(Nmesh - 1 - j) * Nmesh + i] = 0x7fffffff * gsl_rng_uniform(random_generator);
+            ST(j, (Nmesh - 1 - i))[0] = 0x7fffffff * gsl_rng_uniform(random_generator);
 
         for(j = 0; j < i; j++)
-            seedtable[i * Nmesh + (Nmesh - 1 - j)] = 0x7fffffff * gsl_rng_uniform(random_generator);
+            ST((Nmesh - 1 - i), (Nmesh - 1 - j))[0] = 0x7fffffff * gsl_rng_uniform(random_generator);
 
         for(j = 0; j < i + 1; j++)
-            seedtable[j * Nmesh + (Nmesh - 1 - i)] = 0x7fffffff * gsl_rng_uniform(random_generator);
-
-        for(j = 0; j < i; j++)
-            seedtable[(Nmesh - 1 - i) * Nmesh + (Nmesh - 1 - j)] = 0x7fffffff * gsl_rng_uniform(random_generator);
-
-        for(j = 0; j < i + 1; j++)
-            seedtable[(Nmesh - 1 - j) * Nmesh + (Nmesh - 1 - i)] = 0x7fffffff * gsl_rng_uniform(random_generator);
+            ST((Nmesh - 1 - j), (Nmesh - 1 - i))[0] = 0x7fffffff * gsl_rng_uniform(random_generator);
     }
     gsl_rng_free(random_generator);
 }
@@ -123,7 +127,7 @@ void fill_PK(int ax) {
             if (j == Nmesh / 2) continue;
             dsjj = (Nsample - dsj) % Nsample;
 
-            gsl_rng_set(random_generator, seedtable[i * Nmesh + j]);
+            gsl_rng_set(random_generator, seedtable[dsi * Nsample + dsj]);
 
             for(k = 0; k <= Nmesh / 2; k++) {
                 double phase = gsl_rng_uniform(random_generator) * 2 * G_PI;
