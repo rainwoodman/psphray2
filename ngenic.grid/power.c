@@ -11,7 +11,6 @@ static double AA, BB, CC;
 static double nu;
 static double Norm;
 
-
 static int NPowerTable;
 
 static struct pow_table
@@ -87,31 +86,33 @@ void init_power(void)
 
 static double tk_eh(double k)		/* from Martin White */
 {
-  double q, theta, ommh2, a, s, gamma, L0, C0;
-  double tmp;
-  double omegam, omegab, ombh2, hubble;
+  static int inited = 0;
+  static double A, S;
+  static double MPC_h;
+  const double hubble = CB.C.h;
+  const double omegam = CB.C.OmegaM;
+  const double theta = 2.728 / 2.7;
+  if(!inited) {
+      /* other input parameters */
 
-  /* other input parameters */
-  hubble = CB.C.h;
+      const double omegab = CB.C.OmegaB;
+      const double ommh2 = omegam * hubble * hubble;
+      const double ombh2 = omegab * hubble * hubble;
+      MPC_h = 1000 * CB.U.KPC_h;
+      S = 44.5 * log(9.83 / ommh2) / sqrt(1. + 10. * exp(0.75 * log(ombh2))) * hubble;
+      A = 1. - 0.328 * log(431. * ommh2) * ombh2 / ommh2
+        + 0.380 * log(22.3 * ommh2) * (ombh2 / ommh2) * (ombh2 / ommh2);
+      inited = 1;
+  }
 
-  omegam = CB.C.OmegaM;
-  omegab = CB.C.OmegaB;
+  /* convert to h/Mpc */
+  const double ks = 0.43 * (k * MPC_h) * S;
 
-  k *= 1000. * CB.U.KPC_h;	/* convert to h/Mpc */
-
-  theta = 2.728 / 2.7;
-  ommh2 = omegam * hubble * hubble;
-  ombh2 = omegab * hubble * hubble;
-  s = 44.5 * log(9.83 / ommh2) / sqrt(1. + 10. * exp(0.75 * log(ombh2))) * hubble;
-  a = 1. - 0.328 * log(431. * ommh2) * ombh2 / ommh2
-    + 0.380 * log(22.3 * ommh2) * (ombh2 / ommh2) * (ombh2 / ommh2);
-  gamma = a + (1. - a) / (1. + exp(4 * log(0.43 * k * s)));
-  gamma *= omegam * hubble;
-  q = k * theta * theta / gamma;
-  L0 = log(2. * exp(1.) + 1.8 * q);
-  C0 = 14.2 + 731. / (1. + 62.5 * q);
-  tmp = L0 / (L0 + C0 * q * q);
-  return (tmp);
+  const double gamma = (A + (1. - A) / (1. + ks * ks * ks * ks)) * (omegam * hubble);
+  const double q = (k * MPC_h) * theta * theta / gamma;
+  const double L0 = log(2. * M_E + 1.8 * q);
+  const double C0 = 14.2 + 731. / (1. + 62.5 * q);
+  return L0 / (L0 + C0 * q * q);
 }
 
 static double PowerSpec_Tabulated(double k)
