@@ -216,10 +216,8 @@ int main(int argc, char * argv[]) {
         g_option_context_free(context);
     }
     common_block_sync();
-    if(!CB.F.INDEX) {
-        init_power();
-        init_disp();
-    }
+    init_power();
+    init_disp();
     init_filter();
 
     ROOTONLY {

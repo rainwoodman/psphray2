@@ -43,7 +43,9 @@ void init_disp() {
              Nsample / 2+1, MPI_COMM_WORLD, 
             &Local_nx, &Local_x_start,
             &Local_ny, &Local_y_start);
+}
 
+void init_seedtable() {
     gsl_rng * random_generator = gsl_rng_alloc(gsl_rng_ranlxd1);
 
     gsl_rng_set(random_generator, CB.IC.Seed);
@@ -85,7 +87,7 @@ void init_disp() {
 
 void free_disp(void) {
     if(Cdata) free(Cdata);
-    g_free(seedtable);
+    if(seedtable) g_free(seedtable);
     fftw_destroy_plan(InversePlan);
     fftw_mpi_cleanup();
 }
@@ -104,6 +106,7 @@ void fill_PK(int ax) {
     double kvec[3];
 
     if(!Cdata) {
+        init_seedtable();
         /* allocate memory only if it is needed */
         Cdata = fftw_alloc_complex(localsize);
         if(!Cdata) {
