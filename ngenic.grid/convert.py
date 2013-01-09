@@ -185,12 +185,16 @@ def setup_innerlevel(Nmesh):
   dispz = readblock(Nmesh, 'dispz', 'f4')
   delta = readblock(Nmesh, 'delta', 'f4')
   meta = args.Meta[Nmesh]
-
+  assert len(index) == len(r)
+  assert len(index) == len(dispx)
+  assert len(index) == len(dispy)
+  assert len(index) == len(dispz)
+  assert len(index) == len(delta)
   alldata = []
   for i, region in enumerate(args.Regions):
     mask = r == i
     data = numpy.empty(mask.sum(), dtype=[
-           ('gps', ('i4', 3)), 
+           ('gps', ('i8', 3)), 
            ('disp', ('f4', 3)),
            ('delta', 'f4')])
     data['gps'][:, 0], data['gps'][:, 1], data['gps'][:, 2] = numpy.unravel_index(index[mask], meta['Size'][i])
@@ -209,7 +213,7 @@ def setup_innerlevel(Nmesh):
 
 def setup_baselevel(Nmesh):
   data = numpy.empty((Nmesh, Nmesh, Nmesh), dtype=[
-           ('gps', ('i4', 3)), 
+           ('gps', ('i8', 3)), 
            ('disp', ('f4', 3)),
            ('delta', 'f4')])
 
@@ -433,11 +437,15 @@ def gadget():
         # of previous level
         # we use the corresponding upper level values.
         # It really should have been a fourier interploation.
-        dataPrev = data[holemask] 
-        indexPrev = numpy.ravel_multi_index(dataPrev['gps'].T, (Nmesh, Nmesh, Nmesh))
-        arg = indexPrev.argsort()
-        dataPrev = dataPrev[arg]
-        indexPrev = indexPrev[arg]
+        # first save them to a temp place
+        # then load them after the 'fill' step is done.
+        dataPrevTemp = data[holemask] 
+        indexPrevTemp = numpy.ravel_multi_index(dataPrevTemp['gps'].T, (Nmesh, Nmesh, Nmesh))
+        arg = indexPrevTemp.argsort()
+        dataPrevTemp = dataPrevTemp[arg]
+        indexPrevTemp = indexPrevTemp[arg]
+        print Nmesh, 'hole', dataPrevTemp['gps'].min(axis=0), dataPrevTemp['gps'].max(axis=0), indexPrevTemp.min(), indexPrevTemp.max(), indexPrevTemp
+        
         arg = None
       data = data[~holemask]
     if i > 0:
@@ -446,19 +454,30 @@ def gadget():
       NmeshPrev = args.Levels[i - 1]
       assert Nmesh % NmeshPrev == 0
       fillmask = dig(data, Nmesh, scale=args.Scale[Nmesh], Align=NmeshPrev)
+      print Nmesh, 'before fill', data['gps'].min(axis=0), data['gps'].max(axis=0)
       data = data[fillmask]
+      print Nmesh, 'after fill', data['gps'].min(axis=0), data['gps'].max(axis=0)
       if args.DownSample[Nmesh] > 1:
         # the DownSample interpolation.
         # first find the corresponding lowerlevel points
         index = numpy.ravel_multi_index(data['gps'].T / (Nmesh / NmeshPrev),
                    (NmeshPrev, NmeshPrev, NmeshPrev))
+        print Nmesh, 'index', index.min(), index.max()
         arg = indexPrev.searchsorted(index, 'left')
-        assert (indexPrev[arg] == index).all()
+        if not (indexPrev[arg] == index).all():
+#          print data[indexPrev[arg] != index]
+          print indexPrev, index
+          print 'assertion failure for these points', Nmesh, NmeshPrev
+          raise Exception("")
         # then add them to the current level
         data['disp'] += dataPrev['disp'][arg]
         data['delta'] += dataPrev['delta'][arg]
         arg = None
         index = None
+    if i < len(args.Levels) - 1:
+      if args.DownSample[NmeshNext] > 1:
+        indexPrev = indexPrevTemp
+        dataPrev = dataPrevTemp
 
     nchunks = int(numpy.ceil(len(data) / (1.0 * args.Npar)))
     datasp = numpy.array_split(data, nchunks)
