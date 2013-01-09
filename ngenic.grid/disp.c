@@ -11,6 +11,8 @@ static fftw_complex * Cdata;
 double * Disp;
 intptr_t Local_nx;
 intptr_t Local_x_start;
+intptr_t Local_ny;
+intptr_t Local_y_start;
 static fftw_plan InversePlan;
 static size_t localsize;
 
@@ -23,7 +25,7 @@ static double Dplus;
 extern double PowerSpec(double);
 extern double GrowthFactor(double, double);
 
-#define PK(i, j, k) Cdata[(((i) - Local_x_start) * Nsample + (j)) * (Nsample / 2 + 1) + (k)]
+#define PKT(i, j, k) Cdata[(((j) - Local_y_start) * Nsample + (i)) * (Nsample / 2 + 1) + (k)]
 
 void init_disp() {
     Nmesh = CB.IC.Nmesh;
@@ -37,7 +39,10 @@ void init_disp() {
 
     fftw_mpi_init();
 
-    localsize = fftw_mpi_local_size_3d(Nsample, Nsample, Nsample / 2+1, MPI_COMM_WORLD, &Local_nx, &Local_x_start);
+    localsize = fftw_mpi_local_size_3d_transposed(Nsample, Nsample,
+             Nsample / 2+1, MPI_COMM_WORLD, 
+            &Local_nx, &Local_x_start,
+            &Local_ny, &Local_y_start);
 
     gsl_rng * random_generator = gsl_rng_alloc(gsl_rng_ranlxd1);
 
@@ -85,8 +90,8 @@ void free_disp(void) {
     fftw_mpi_cleanup();
 }
 
-static int i_in_slab(int i) {
-    return i >= Local_x_start && i < Local_x_start + Local_nx;
+static int j_in_slab(int j) {
+    return j >= Local_y_start && j < Local_y_start + Local_ny;
 }
 
 void fill_PK(int ax) {
@@ -111,21 +116,21 @@ void fill_PK(int ax) {
         }
         Disp = (double*) Cdata;
         /* In place b/c Cdata is an alias of Disp */
-        InversePlan = fftw_mpi_plan_dft_c2r_3d(Nsample, Nsample, Nsample, Cdata, Disp, MPI_COMM_WORLD, FFTW_MEASURE);
+        InversePlan = fftw_mpi_plan_dft_c2r_3d(Nsample, Nsample, Nsample, Cdata, Disp, MPI_COMM_WORLD, FFTW_MEASURE | FFTW_MPI_TRANSPOSED_IN);
     }
 
-    memset(Cdata, 0, (size_t) Local_nx * Nsample * (Nsample / 2 + 1) * sizeof(fftw_complex));
+    memset(Cdata, 0, localsize * sizeof(fftw_complex));
 
     gsl_rng * random_generator = gsl_rng_alloc(gsl_rng_ranlxd1);
 
-    for(i = 0, dsi = 0; i < Nmesh; i += DownSample, dsi++) {
-        dsii = (Nsample - dsi) % Nsample;
-        if (!i_in_slab(dsi) & !i_in_slab(dsii)) continue;
+    for(j = 0, dsj = 0; j < Nmesh; j += DownSample, dsj++) {
+        dsjj = (Nsample - dsj) % Nsample;
+        if (!j_in_slab(dsj) & !j_in_slab(dsjj)) continue;
 
-        if (i == Nmesh / 2) continue;
-        for(j = 0, dsj = 0; j < Nmesh; j += DownSample, dsj++) {
-            if (j == Nmesh / 2) continue;
-            dsjj = (Nsample - dsj) % Nsample;
+        if (j == Nmesh / 2) continue;
+        for(i = 0, dsi = 0; i < Nmesh; i += DownSample, dsi++) {
+            if (i == Nmesh / 2) continue;
+            dsii = (Nsample - dsi) % Nsample;
 
             gsl_rng_set(random_generator, seedtable[dsi * Nsample + dsj]);
 
@@ -219,29 +224,30 @@ void fill_PK(int ax) {
                         /* PK(0, j, 0), PK(0, jj, 0) are conjugates */
 
                         /* protect memory access */
-                        i_in_slab(dsi)?(
-                            PK(dsi, dsj, dsk)[0] = re,
-                            PK(dsi, dsj, dsk)[1] = im,
-                            PK(dsi, dsjj, dsk)[0] = re,
-                            PK(dsi, dsjj, dsk)[1] = -im):0;
+                        j_in_slab(dsj)?(
+                            PKT(dsi, dsj, dsk)[0] = re,
+                            PKT(dsi, dsj, dsk)[1] = im):0;
+                        j_in_slab(dsjj)?(
+                            PKT(dsi, dsjj, dsk)[0] = re,
+                            PKT(dsi, dsjj, dsk)[1] = -im):0;
                     } else {
 
-                        /* here comes i!=0 : conjugate can be on other processor! */
+                        /* here comes j!=0 : conjugate can be on other processor! */
                         /* PK(i, j, 0), PK(ii, jj, 0) are conjugates */
 
                         /* protect memory access */
-                        i_in_slab(dsi)?(
-                            PK(dsi, dsj, dsk)[0] = re,
-                            PK(dsi, dsj, dsk)[1] = im):0;
-                        i_in_slab(dsii)?(
-                            PK(dsii, dsjj, dsk)[0] = re,
-                            PK(dsii, dsjj, dsk)[1] = -im):0;
+                        j_in_slab(dsj)?(
+                            PKT(dsi, dsj, dsk)[0] = re,
+                            PKT(dsi, dsj, dsk)[1] = im):0;
+                        j_in_slab(dsjj)?(
+                            PKT(dsii, dsjj, dsk)[0] = re,
+                            PKT(dsii, dsjj, dsk)[1] = -im):0;
                     }
                 } else {
                     /* k != 0, PK(i, j, ..) is independent */
-                    i_in_slab(dsi)?(
-                        PK(dsi, dsj, dsk)[0] = re,
-                        PK(dsi, dsj, dsk)[1] = im):0;
+                    j_in_slab(dsj)?(
+                        PKT(dsi, dsj, dsk)[0] = re,
+                        PKT(dsi, dsj, dsk)[1] = im):0;
                 }
             /* end of k, j, i loops */
             }
