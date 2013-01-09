@@ -31,22 +31,23 @@ parser.add_argument('--no-displacement', dest='nodisp',
 def parseargs(parser):
   args = parser.parse_args()
   config = ConfigParser.ConfigParser()
-  config.read(StringIO.StringIO("""
-         [Cosmology]
-         h = 0.72
-         H = 0.1
-         G = 43007.1
-         C = 3e5
-         OmegaB = 0.044
-         OmegaM = 0.26
-         OmegaL = 0.74
-         [Units]
-         UnitLength_in_cm = 3.085678e21
-         UnitMass_in_g = 1.989e43
-         UnitVelocity_in_cm_per_s = 1e5
+  config.readfp(StringIO.StringIO(
+"""[Cosmology]
+h = 0.72
+H = 0.1
+G = 43007.1
+C = 3e5
+OmegaB = 0.044
+OmegaM = 0.26
+OmegaL = 0.74
+[Units]
+UnitLength_in_cm = 3.085678e21
+UnitMass_in_g = 1.989e43
+UnitVelocity_in_cm_per_s = 1e5
 """))
-  config.read(args.paramfile)
-
+  str = file(args.paramfile).read().replace(';', ',').replace('#', ';')
+  print str
+  config.readfp(StringIO.StringIO(str))
   args.datadir = config.get("IO", "datadir")
   args.BoxSize = config.getfloat("IC", "BoxSize")
   args.a = config.getfloat("IC", "a")
@@ -85,13 +86,15 @@ def parseargs(parser):
   for name, value in config.items("Levels"):
     sp = value.replace(';', ',').split(',')
     good = False
+    if len(sp) < 2 or len(sp) > 4:
+      raise 'paramfile format error, need 2/3/4 entries per Level [Levels]'
+
     if len(sp) >= 2:
       n, s = int(sp[0]), float(sp[1])
       # the default is 
       p = -1
       g = None
       d = 1
-      good = True
     if len(sp) >= 3:
       if 'g' in sp[2]:
         p = int(sp[2].replace('g', ''))
@@ -99,13 +102,9 @@ def parseargs(parser):
       else:
         p = int(sp[2])
         g = False
-      good = True
     if len(sp) == 4:
       d = int(sp[3])
-    else: good = False
 
-    if not good:
-      raise 'paramfile format error, need 2/3/4 entries per Level [Levels]'
     Levels.append(n)
     args.Scale[n] = s
     args.DMptype[n] = p
