@@ -90,7 +90,7 @@ void free_disp(void) {
     fftw_mpi_cleanup();
 }
 
-static int j_in_slab(int j) {
+static inline int j_in_slab(int j) {
     return j >= Local_y_start && j < Local_y_start + Local_ny;
 }
 
@@ -98,6 +98,7 @@ void fill_PK(int ax) {
     if(ax < 0) return;
     int i, j, k;
     int dsi, dsii, dsj, dsjj, dsk, dskk;
+    int kmod;
     double K0 = 2 * G_PI / BoxSize;
     double fac = pow(K0, 1.5);
     double kvec[3];
@@ -116,7 +117,10 @@ void fill_PK(int ax) {
         }
         Disp = (double*) Cdata;
         /* In place b/c Cdata is an alias of Disp */
-        InversePlan = fftw_mpi_plan_dft_c2r_3d(Nsample, Nsample, Nsample, Cdata, Disp, MPI_COMM_WORLD, FFTW_MEASURE | FFTW_MPI_TRANSPOSED_IN);
+        InversePlan = fftw_mpi_plan_dft_c2r_3d(Nsample, Nsample, Nsample, Cdata, Disp, MPI_COMM_WORLD, FFTW_ESTIMATE | FFTW_MPI_TRANSPOSED_IN);
+        ROOTONLY {
+            g_message("fft plan established");
+        }
     }
 
     memset(Cdata, 0, localsize * sizeof(fftw_complex));
@@ -134,8 +138,10 @@ void fill_PK(int ax) {
 
             gsl_rng_set(random_generator, seedtable[dsi * Nsample + dsj]);
 
-            for(k = 0; k <= Nmesh / 2; k++) {
-                double phase = gsl_rng_uniform(random_generator) * 2 * G_PI;
+            for(kmod = 0, dsk = 0, k = 0; 
+                k <= Nmesh / 2; 
+                k++, (++kmod==DownSample)?(kmod=0, dsk++):0) {
+                double phase = gsl_rng_uniform(random_generator) * (2 * G_PI);
                 double ampl;
                 do {
                     ampl = gsl_rng_uniform(random_generator);
@@ -148,8 +154,7 @@ void fill_PK(int ax) {
                 if(k == Nmesh / 2) continue;
                 if(i == 0 && j == 0 && k == 0) continue;
                 /* not a sample point */
-                if(k % DownSample) continue;
-                dsk = k / DownSample;
+                if(kmod != 0) continue;
 
                 /* skip conjugates */
                 if(dsk == 0) {
@@ -260,6 +265,7 @@ void fill_PK(int ax) {
 void disp(int ax) {
     ROOTONLY g_message("filling axis %d", ax);
     fill_PK(ax);
+    MPI_Barrier(MPI_COMM_WORLD);
     ROOTONLY g_message("fft axis %d", ax);
     fftw_execute(InversePlan); 
     ROOTONLY g_message("done fft axis %d", ax);
