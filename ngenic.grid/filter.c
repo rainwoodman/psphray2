@@ -118,6 +118,9 @@ void filter(int ax, char * fname, int xDownSample) {
     char *be = &buffer[BS];
     char *bp = buffer;
     int i, j, k, dsi, dsj, dsk;
+    MPI_Barrier(MPI_COMM_WORLD);
+    ROOTONLY g_message("filtering ax %d", ax);
+
     for(dsi = 0; dsi < Nsample; dsi ++) {
         i = dsi + xDownSample * Nsample;
         if(dsi < Local_x_start) continue;
@@ -178,6 +181,8 @@ void filter(int ax, char * fname, int xDownSample) {
     g_free(crossy);
     g_free(crossx);
     g_free(buffer);
+    MPI_Barrier(MPI_COMM_WORLD);
+    ROOTONLY g_message("done filtering ax %d", ax);
 }
 
 void dump_filter(char * fname) {
