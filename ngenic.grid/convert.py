@@ -3,7 +3,9 @@ import argparse
 import numpy
 import os.path
 import StringIO
-parser = argparse.ArgumentParser(description="Assembling IC files from raw dumps")
+
+# this requires numpy > 1.6.0
+parser = argparse.ArgumentParser(description="Assembling IC files from dumps")
 parser.add_argument("paramfile", 
                help="the same paramfile fed to ngenic.grid.")
 parser.add_argument("format", choices=['gadget', 'ramses'], 
@@ -13,7 +15,7 @@ parser.add_argument("format", choices=['gadget', 'ramses'],
 parser.add_argument("-N", "--num-particles", 
                help="Number of DM particles per file. \
                      For levels with Gas the total number in a file will be twice of this",
-                    default=1024 * 1024 * 20, dest='Npar', type=int);
+                    default=1024 * 1024 * 4, dest='Npar', type=int);
 parser.add_argument("-o", "--prefix", 
                help="Prefix of the IC files. \
                      Do not forget to put a filename base. \
@@ -432,7 +434,7 @@ def gadget():
     if not (indexPrev[arg] == index).all():
       print indexPrev, index
       print 'assertion failure for these points', Nmesh, NmeshPrev
-      raise Exception("")
+      raise Exception(" We cannot continue")
         # then add them to the current level
     data['disp'] += dataPrev['disp'][arg]
     data['delta'] += dataPrev['delta'][arg]
