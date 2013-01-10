@@ -101,9 +101,33 @@ void fill_PK(int ax) {
     int i, j, k;
     int dsi, dsii, dsj, dsjj, dsk, dskk;
     int kmod;
+    /* What this does 
+     *
+     * delta = K0 **  3/2 * (DownSampling ** 3) * FFT ( delta_k * S(k)) * 
+     *       = K0 ** -3/2 * CFT ( delta_k * S(k))
+     * where S is the selection function.
+     *
+     * Without downsampling S selects all frequency
+     * in the sphere or in the box.
+     *
+     * With downsampling S selects all frequency
+     * that are not previously covered. The delta of
+     * lower frequency is added by convert.py
+     * */
     double K0 = 2 * G_PI / BoxSize;
-    double fac = pow(K0, 1.5);
-    double kvec[3];
+    double Kthresh = K0 * Nmesh / 2;
+    double KthreshBefore = K0 * NmeshBefore / 2;
+    /* Dplus scale back to starting redshift */
+    /* DownSample ** 3 corrects for FFT<->CFG */
+    double fac = pow(K0, 1.5) * pow(DownSample, 3) / Dplus; 
+
+   double * ktable = g_new0(double, Nmesh);
+   double * k2table = g_new0(double, Nmesh);
+    for(i = 0; i < Nmesh; i ++) {
+        if(i < Nmesh / 2) ktable[i] = i * K0;
+        else ktable[i] = -(Nmesh - i) * K0;
+        k2table[i] = ktable[i] * ktable[i];
+    }
 
     if(!Cdata) {
         init_seedtable();
@@ -153,11 +177,12 @@ void fill_PK(int ax) {
                 /* to strictly preserve the random number sequence
                  * need to skip after phase and ampl are generated */
 
+                /* not a sample point */
+                if(kmod != 0) continue;
+
                 /* singularity */
                 if(k == Nmesh / 2) continue;
                 if(i == 0 && j == 0 && k == 0) continue;
-                /* not a sample point */
-                if(kmod != 0) continue;
 
                 /* skip conjugates */
                 if(dsk == 0) {
@@ -170,17 +195,8 @@ void fill_PK(int ax) {
                 /* use i, j, k for the K vector,
                  * and dsi, dsj, dsk for the memory location
                  * effectively this is doing a FFT on BoxSize/DownSample */
-                if(i < Nmesh / 2) kvec[0] = i * K0;
-                else kvec[0] = -(Nmesh - i) * K0;
 
-                if(j < Nmesh / 2) kvec[1] = j * K0;
-                else kvec[1] = -(Nmesh - j) * K0;
-
-                /* the else branch never happens */
-                if(k < Nmesh / 2) kvec[2] = k * K0;
-                else kvec[2] = -(Nmesh - k) * K0;
-
-                double kmag2 = kvec[0] * kvec[0] + kvec[1] * kvec[1] + kvec[2] * kvec[2];
+                double kmag2 = k2table[i] + k2table[j] + k2table[k];
                 double kmag = sqrt(kmag2);
 
                 /* if this level has been downsampled, 
@@ -189,7 +205,7 @@ void fill_PK(int ax) {
                  * and assembled in convert.py. this has to be done
                  * to preserve the powerspectrum 
                  *
-                 * In theory, for the no dowm sampling modes we shall
+                 * In theory, for the no down sampling modes we shall
                  * also do this on the DownSampling = 1 meshes.
                  * however, the without a fourier interpolation(we do 
                  * nearest neighbour in conver.py)
@@ -197,35 +213,44 @@ void fill_PK(int ax) {
                  * there is no need to pay this price.
                  * */
                 if(SphereMode == 1) {
-                    if(kmag / K0 > Nmesh / 2 ||
-                    (DownSample > 1 && kmag / K0 >= NmeshBefore / 2)) 
+                    if(kmag > Kthresh ||
+                    (DownSample > 1 && kmag <= KthreshBefore)) 
                         continue;
                 } else {
-                    int d;
-                    for(d = 0; d < 3; d++) {
-                        if(fabs(kvec[d]) / K0 > Nmesh / 2 ||
-                        (DownSample > 1 && 
-                           fabs(kvec[d]) / K0 >= NmeshBefore / 2)) {
-                            break;
-                        }
-                    }
-                    /* if any of the dimension is out of bound */
-                    if (d < 3) continue;
+                    if(ktable[i] > Kthresh ||
+                       (DownSample > 1 && ktable[i] <= KthreshBefore))
+                        continue;
+                    if(ktable[j] > Kthresh ||
+                       (DownSample > 1 && ktable[i] <= KthreshBefore))
+                        continue;
+                    if(ktable[k] > Kthresh ||
+                       (DownSample > 1 && ktable[i] <= KthreshBefore))
+                        continue;
                 }
 
                 double p_of_k = PowerSpec(kmag) * -log(ampl);
-                double delta = fac * sqrt(p_of_k) / Dplus; /* scale back to starting redshift */
-
+                double delta = fac * sqrt(p_of_k);
                 double re, im;
-
-                if(ax == 3) {
-                    re = delta * cos(phase);
-                    im = delta * sin(phase);
-                } else if(ax >=0 && ax < 3) {
-                    re = -kvec[ax] / kmag2 * delta * sin(phase);
-                    im = kvec[ax] / kmag2 * delta * cos(phase);
+                switch(ax) {
+                    case 0:
+                        re = -ktable[i] / kmag2 * delta * sin(phase);
+                        im = ktable[i] / kmag2 * delta * cos(phase);
+                        break;
+                    case 1:
+                        re = -ktable[j] / kmag2 * delta * sin(phase);
+                        im = ktable[j] / kmag2 * delta * cos(phase);
+                        break;
+                    case 2:
+                        re = -ktable[k] / kmag2 * delta * sin(phase);
+                        im = ktable[k] / kmag2 * delta * cos(phase);
+                        break;
+                    case 3:
+                        re = delta * cos(phase);
+                        im = delta * sin(phase);
+                        break;
+                    default:
+                        g_error("never reach here, ax is not 0 1 2 3");
                 }
-
                 if(dsk == 0) {
                     /* k=0 plane needs special treatment */
                     if(dsi == 0) {
@@ -262,6 +287,8 @@ void fill_PK(int ax) {
         }
     }
     gsl_rng_free(random_generator);
+    g_free(ktable);
+    g_free(k2table);
 }
 
 
