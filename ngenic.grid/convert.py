@@ -333,8 +333,7 @@ def gadget():
     with file(fname, 'r+') as icfile:
       writerecord(icfile, header)
     
-  def write_gadget(fname, data):
-    Nmesh = args.Levels[i]
+  def write_gadget(fname, Nmesh, data):
     ptype = args.DMptype[Nmesh]
     makegas = args.MakeGas[Nmesh]
 
@@ -421,11 +420,54 @@ def gadget():
         ie = None
     return header
 
+  def interpolate(data, Nmesh, prev):
+    # the DownSample interpolation.
+    # first find the corresponding lowerlevel points
+    # prev is returned from preserve()
+    dataPrev, indexPrev, NmeshPrev = prev
+    index = numpy.ravel_multi_index(data['gps'].T / (Nmesh / NmeshPrev),
+               (NmeshPrev, NmeshPrev, NmeshPrev))
+    print Nmesh, 'index', index.min(), index.max()
+    arg = indexPrev.searchsorted(index, 'left')
+    if not (indexPrev[arg] == index).all():
+      print indexPrev, index
+      print 'assertion failure for these points', Nmesh, NmeshPrev
+      raise Exception("")
+        # then add them to the current level
+    data['disp'] += dataPrev['disp'][arg]
+    data['delta'] += dataPrev['delta'][arg]
+
+  def preserve(data, mask, Nmesh):
+    # downsample levels need to carry on the interpolation
+    # of previous level
+    # we use the corresponding upper level values.
+    # It really should have been a fourier interploation.
+    # first save them to a temp place
+    # then load them after the 'fill' step is done.
+    dataPrev = data[holemask] 
+    indexPrev = numpy.ravel_multi_index(dataPrev['gps'].T, (Nmesh, Nmesh, Nmesh))
+    arg = indexPrev.argsort()
+    dataPrev = dataPrev[arg]
+    indexPrev = indexPrev[arg]
+    print Nmesh, 'hole', dataPrev['gps'].min(axis=0), dataPrev['gps'].max(axis=0), indexPrev.min(), indexPrev.max(), indexPrev
+    return dataPrev, indexPrev, Nmesh
+
   H = []
   fid = 0
   for i, Nmesh in enumerate(args.Levels):
     print i, Nmesh
     data = setup_level(Nmesh)
+
+    if i > 0:
+      # if there is a parent level, clip the current level
+      # to fill in the space of the parent level
+      NmeshPrev = args.Levels[i - 1]
+      assert Nmesh % NmeshPrev == 0
+      fillmask = dig(data, Nmesh, scale=args.Scale[Nmesh], Align=NmeshPrev)
+      data = data[fillmask]
+      if args.DownSample[Nmesh] > 1:
+        interpolate(data, Nmesh, prev)
+
     if i < len(args.Levels) - 1:
       # if there is a refine level, dig a hole from the current level
       # leaving space for the next level.
@@ -433,57 +475,15 @@ def gadget():
       assert NmeshNext % Nmesh == 0
       holemask = dig(data, Nmesh, scale=args.Scale[NmeshNext])
       if args.DownSample[NmeshNext] > 1:
-        # downsample levels need to carry on the interpolation
-        # of previous level
-        # we use the corresponding upper level values.
-        # It really should have been a fourier interploation.
-        # first save them to a temp place
-        # then load them after the 'fill' step is done.
-        dataPrevTemp = data[holemask] 
-        indexPrevTemp = numpy.ravel_multi_index(dataPrevTemp['gps'].T, (Nmesh, Nmesh, Nmesh))
-        arg = indexPrevTemp.argsort()
-        dataPrevTemp = dataPrevTemp[arg]
-        indexPrevTemp = indexPrevTemp[arg]
-        print Nmesh, 'hole', dataPrevTemp['gps'].min(axis=0), dataPrevTemp['gps'].max(axis=0), indexPrevTemp.min(), indexPrevTemp.max(), indexPrevTemp
-        
-        arg = None
+        prev = preserve(data, holemask, Nmesh)
       data = data[~holemask]
-    if i > 0:
-      # if there is a parent level, clip the current level
-      # to fill in the space of the parent level
-      NmeshPrev = args.Levels[i - 1]
-      assert Nmesh % NmeshPrev == 0
-      fillmask = dig(data, Nmesh, scale=args.Scale[Nmesh], Align=NmeshPrev)
-      print Nmesh, 'before fill', data['gps'].min(axis=0), data['gps'].max(axis=0)
-      data = data[fillmask]
-      print Nmesh, 'after fill', data['gps'].min(axis=0), data['gps'].max(axis=0)
-      if args.DownSample[Nmesh] > 1:
-        # the DownSample interpolation.
-        # first find the corresponding lowerlevel points
-        index = numpy.ravel_multi_index(data['gps'].T / (Nmesh / NmeshPrev),
-                   (NmeshPrev, NmeshPrev, NmeshPrev))
-        print Nmesh, 'index', index.min(), index.max()
-        arg = indexPrev.searchsorted(index, 'left')
-        if not (indexPrev[arg] == index).all():
-#          print data[indexPrev[arg] != index]
-          print indexPrev, index
-          print 'assertion failure for these points', Nmesh, NmeshPrev
-          raise Exception("")
-        # then add them to the current level
-        data['disp'] += dataPrev['disp'][arg]
-        data['delta'] += dataPrev['delta'][arg]
-        arg = None
-        index = None
-    if i < len(args.Levels) - 1:
-      if args.DownSample[NmeshNext] > 1:
-        indexPrev = indexPrevTemp
-        dataPrev = dataPrevTemp
 
+    # now data contains the region to be saved.
     nchunks = int(numpy.ceil(len(data) / (1.0 * args.Npar)))
     datasp = numpy.array_split(data, nchunks)
     for k in range(nchunks):
       fname = '%s.%d' % (args.prefix, fid + k)
-      H.append((fname, write_gadget(fname, datasp[k])))
+      H.append((fname, write_gadget(fname, Nmesh, datasp[k])))
     fid = fid + nchunks
 
   Ntot = numpy.zeros(6, dtype='i8')
