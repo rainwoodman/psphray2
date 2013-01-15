@@ -5,45 +5,45 @@ import os.path
 import StringIO
 
 # this requires numpy > 1.6.0
-parser = argparse.ArgumentParser(description="Assembling IC files from dumps")
-parser.add_argument("paramfile", 
+
+def parseargs():
+  parser = argparse.ArgumentParser(description="Assembling IC files from dumps")
+  parser.add_argument("paramfile", 
                help="the same paramfile fed to ngenic.grid.")
-parser.add_argument("format", choices=['gadget', 'ramses'], 
-               help="Format of the output. \
-                     gadget : to write a gadget IC, \
-                     ramses : to write a ramses IC, only the first zoom region is written due to ramses limitation")
-parser.add_argument("-N", "--num-particles", 
-               help="Number of DM particles per file. \
-                     For levels with Gas the total number in a file will be twice of this",
-                    default=1024 * 1024 * 4, dest='Npar', type=int);
-parser.add_argument("--iddtype",  choices=['uint32', 'uint64'],
-               help="bit width of the id field",
-               default=numpy.dtype(numpy.uint64), dest='iddtype', type=numpy.dtype)
-
-parser.add_argument("--idscheme",  choices=['seq', 'mesh'],
-               help="Format of the id. 'serial' is to sequentially \
-                     assign particle ids. \
-                     for 'mesh', the 64 bit id = 4 bits empty,\
-                                          1 bit  gas(1)/dm(0), \
-                                          7 bit level index, \
-                             52 bits serial mesh index for that level ",
-                     default='mesh', dest='idscheme')
-                     
-parser.add_argument("-o", "--prefix", 
-               help="Prefix of the IC files. \
-                     Do not forget to put a filename base. \
-                     gadget : IC.%%d, one file per zoom level. \
-                     ramses : IC-%%d-%%s, several files per zoom level",
-                                  default="IC")
-parser.add_argument("-q", '--cubic', 
-               help="Use an axis-aligned box for the zoom region, instead of spheres", 
-                   action='store_true', default=False)
-parser.add_argument('--no-displacement', dest='nodisp', 
-                help="Do not displace the position of particles. \
-                      Physics will be corrupted. Do not use", 
-                      action='store_true', default=False)
-
-def parseargs(parser):
+  parser.add_argument("format", choices=['gadget', 'ramses'], 
+                 help="Format of the output. \
+                       gadget : to write a gadget IC, \
+                       ramses : to write a ramses IC, only the first zoom region is written due to ramses limitation")
+  parser.add_argument("-N", "--num-particles", 
+                 help="Number of DM particles per file. \
+                       For levels with Gas the total number in a file will be twice of this",
+                      default=1024 * 1024 * 4, dest='Npar', type=int);
+  parser.add_argument("--iddtype",  choices=['uint32', 'uint64'],
+                 help="bit width of the id field",
+                 default=numpy.dtype(numpy.uint64), dest='iddtype', type=numpy.dtype)
+  
+  parser.add_argument("--idscheme",  choices=['seq', 'mesh'],
+                 help="Format of the id. 'serial' is to sequentially \
+                       assign particle ids. \
+                       for 'mesh', the 64 bit id = 4 bits empty,\
+                                            1 bit  gas(1)/dm(0), \
+                                            7 bit level index, \
+                               52 bits serial mesh index for that level ",
+                       default='mesh', dest='idscheme')
+                       
+  parser.add_argument("-o", "--prefix", 
+                 help="Prefix of the IC files. \
+                       Do not forget to put a filename base. \
+                       gadget : IC.%%d, one file per zoom level. \
+                       ramses : IC-%%d-%%s, several files per zoom level",
+                                    default="IC")
+  parser.add_argument("-q", '--cubic', 
+                 help="Use an axis-aligned box for the zoom region, instead of spheres", 
+                     action='store_true', default=False)
+  parser.add_argument('--no-displacement', dest='nodisp', 
+                  help="Do not displace the position of particles. \
+                        Physics will be corrupted. Do not use", 
+                        action='store_true', default=False)
   args = parser.parse_args()
   config = ConfigParser.ConfigParser()
   config.readfp(StringIO.StringIO(
@@ -61,7 +61,6 @@ UnitMass_in_g = 1.989e43
 UnitVelocity_in_cm_per_s = 1e5
 """))
   str = file(args.paramfile).read().replace(';', ',').replace('#', ';')
-  print str
   config.readfp(StringIO.StringIO(str))
   args.datadir = config.get("IO", "datadir")
   args.BoxSize = config.getfloat("IC", "BoxSize")
@@ -145,23 +144,7 @@ def read_meta(Nmesh, datadir):
     exec(metalines, meta)
     return meta
 
-def writerecord(file, data):
-    foo = numpy.empty(1, 'i4')
-    foo[...] = data.nbytes
-    foo.tofile(file)
-    data.tofile(file)
-    foo.tofile(file)
-
-
-args = parseargs(parser)
-
-def setup_level(Nmesh):
-  if args.Scale[Nmesh] == 0: 
-    return setup_baselevel(Nmesh)
-  else:
-    return setup_innerlevel(Nmesh)
-  
-def readblock(Nmesh, block, dtype):
+def readblock(Nmesh, block, dtype, args):
   header = {}
   exec(
     file('%s/%s-%d.header' % (args.datadir, block, Nmesh)).read(), 
@@ -192,62 +175,7 @@ def readblock(Nmesh, block, dtype):
   print Nmesh, block, f, 'files read'
   return numpy.concatenate(content)
 
-def setup_innerlevel(Nmesh):
-  index = readblock(Nmesh, 'index', 'i8')
-  r = readblock(Nmesh, 'region', 'u4')
-  dispx = readblock(Nmesh, 'dispx', 'f4')
-  dispy = readblock(Nmesh, 'dispy', 'f4')
-  dispz = readblock(Nmesh, 'dispz', 'f4')
-  delta = readblock(Nmesh, 'delta', 'f4')
-  meta = args.Meta[Nmesh]
-  assert len(index) == len(r)
-  assert len(index) == len(dispx)
-  assert len(index) == len(dispy)
-  assert len(index) == len(dispz)
-  assert len(index) == len(delta)
-  alldata = []
-  for i, region in enumerate(args.Regions):
-    mask = r == i
-    data = numpy.empty(mask.sum(), dtype=[
-           ('gps', ('i4', 3)), 
-           ('disp', ('f4', 3)),
-           ('delta', 'f4')])
-    data['gps'][:, 0], data['gps'][:, 1], data['gps'][:, 2] = numpy.unravel_index(index[mask], meta['Size'][i])
-    data['gps'] += meta['Offset'][i]
-    data['disp'][:, 0] = dispx[mask]
-    data['disp'][:, 1] = dispy[mask]
-    data['disp'][:, 2] = dispz[mask]
-    data['delta'] = delta[mask]
-    alldata.append(data)
-  data = numpy.concatenate(alldata)
-  # now gonna remove the overlaps and make sure points are within the mesh.
-  numpy.remainder(data['gps'], Nmesh, data['gps'])
-  index = numpy.ravel_multi_index(data['gps'].T, (Nmesh, Nmesh, Nmesh))
-  u, ui = numpy.unique(index, return_index=True)
-  return data[ui]
-
-def setup_baselevel(Nmesh):
-  data = numpy.empty((Nmesh, Nmesh, Nmesh), dtype=[
-           ('gps', ('i4', 3)), 
-           ('disp', ('f4', 3)),
-           ('delta', 'f4')])
-
-  grid1d = numpy.arange(Nmesh);
-
-  data['gps'][..., 2] = grid1d[None, None, :]
-  data['gps'][..., 1] = grid1d[None, :, None]
-  data['gps'][..., 0] = grid1d[:, None, None]
-
-  data = data.reshape(-1)
-  for i, block in enumerate(['dispx', 'dispy', 'dispz']):
-    content = readblock(Nmesh, block, 'f4')
-    data['disp'][..., i] = content
-
-  data['delta'] = readblock(Nmesh, 'delta', 'f4')
-
-  return data
-
-def ramses():
+def ramses(args):
   def write_ramses(header, Nmesh, name, buffer):
     with file('%s%d-%s' % (args.prefix, Nmesh, name), 'w') as icfile:
       buffer = buffer.reshape(header['np'])
@@ -270,7 +198,7 @@ def ramses():
     else:
       header['np'][:] = args.Meta[Nmesh]['Size'][0]
       header['xo'][:] = header['dx'] * args.Meta[Nmesh]['Offset'][0]
-      r = readblock(Nmesh, 'region', 'u4')
+      r = readblock(Nmesh, 'region', 'u4', args)
       mask = r == 0
     header['dx'] = boxsize / Nmesh
     header['astart'] = args.a
@@ -279,267 +207,24 @@ def ramses():
     header['h0'] = args.h * 100.0
     print Nmesh, header
 
-    delta = readblock(Nmesh, 'delta', 'f4')
+    delta = readblock(Nmesh, 'delta', 'f4', args)
     if mask is not None: delta = delta[mask]
     write_ramses(header, Nmesh, 'deltab', delta)
     delta = None
     for i, block in enumerate(['dispx', 'dispy', 'dispz']):
-      disp = readblock(Nmesh, block, 'f4')
+      disp = readblock(Nmesh, block, 'f4', args)
       if mask is not None: disp = disp[mask]
       disp *= fac
       write_ramses(header, Nmesh, block, disp)
       disp /= args.Meta[Nmesh]['vfact']
       write_ramses(header, Nmesh, ['velcx', 'velcy', 'velcz'][i], disp)
 
-def gadget():
-  GHEADER = numpy.dtype([
-      ('N', ('u4', 6)),
-      ('mass', ('f8', 6)),
-      ('time', 'f8'),
-      ('redshift', 'f8'),
-      ('flag_sfr', 'i4'),     # unused 
-      ('flag_feedback', 'i4'),  # unused
-      ('Ntot_low', ('u4', 6)),
-      ('flag_cool', 'i4'),  # unused
-      ('Nfiles', 'i4'),
-      ('boxsize', 'f8'),
-      ('OmegaM', 'f8'),
-      ('OmegaL', 'f8'),
-      ('h', 'f8'),
-      ('flag_sft', 'i4'),
-      ('flag_met', 'i4'),
-      ('Ntot_high', ('u4', 6)),
-      ('flag_entropy', 'i4'),
-      ('flag_double', 'i4'),
-      ('flag_ic_info', 'i4'),
-      ('flag_lpt_scalingfactor', 'i4'),
-      ('unused', ('u4', 12)),
-  ])
-
-  def dig(data, Nmesh, scale, Align=None):
-    """ dig a hole on Nmesh points data, for NmeshDig
-        returns the mask of the hole,
-        align to Align, if omitted use Nmesh
-    """
-    if Align is None: Align = Nmesh
-    sep = args.BoxSize / Align
-    assert Nmesh % Align == 0
-    mask2 = numpy.zeros(len(data), dtype='?')
-    for region in args.Regions:
-      gridcenter = region['center'] / sep
-      dis = data['gps'] // (Nmesh // Align) - gridcenter
-      # use the if any part of the mesh overlaps the sphere,
-      dis[dis < - 0.5] += 1
-      dis *= sep
-      dis += args.BoxSize * 0.5
-      numpy.remainder(dis, args.BoxSize, dis)
-      dis -= args.BoxSize * 0.5
-      dis /= (0.5 * region['size'] * scale)
-      if not args.cubic:
-        dis **= 2
-        dis = dis.sum(axis=-1)
-        mask2 |= (dis < 1.0)
-      else:
-        numpy.abs(dis, dis)
-        mask2 |= (dis < 1.0).all(axis=-1)
-    return mask2
-
-  def rewrite_header(fname, header):
-    with file(fname, 'r+') as icfile:
-      writerecord(icfile, header)
-    
-  def write_gadget(fname, Nmesh, data, ilevel, IDStart=None):
-    ptype = args.DMptype[Nmesh]
-    makegas = args.MakeGas[Nmesh]
-
-    with file(fname, 'w') as icfile:
-      critical_mass = 3 * args.H ** 2 / (8 * numpy.pi * args.G) * (args.BoxSize / Nmesh) ** 3
-  
-      header = numpy.zeros(None, GHEADER)
-      header['time'] = args.a
-      header['redshift'] = 1. / args.a - 1
-      header['boxsize'] = args.BoxSize
-      header['OmegaM'] = args.OmegaM
-      header['OmegaL'] = args.OmegaL
-      header['h'] = args.h
-      Npar = len(data)
-  
-      header['N'][ptype] = Npar
-      usemasstab = numpy.sum([args.DMptype[n] == ptype for n in args.Levels]) == 1
-      if args.MakeGas[Nmesh]:
-        header['N'][0] = Npar
-        if usemasstab:
-          header['mass'][ptype] = (args.OmegaM - args.OmegaB) * critical_mass
-      else:
-        if usemasstab:
-          header['mass'][ptype] = args.OmegaM * critical_mass
-  
-      writerecord(icfile, header)
-  
-      # position
-      pos = (numpy.float32(data['gps']) + 0.5) * (1.0 * args.BoxSize / Nmesh)
-      if not args.nodisp:
-        pos += data['disp']
-      if makegas: 
-        pos = numpy.tile(pos, (2, 1))
-        # gas
-        pos[:Npar] -= 0.5 * (1 - args.OmegaB / args.OmegaM) * args.BoxSize / Nmesh
-        # dm
-        pos[Npar:] += 0.5 * args.OmegaB / args.OmegaM * args.BoxSize / Nmesh
-  
-      numpy.remainder(pos, args.BoxSize, pos)
-  
-      writerecord(icfile, pos)
-      pos = None
-  
-      # velocity
-      vel = data['disp'] * args.Meta[Nmesh]['vfact']
-      if makegas: 
-        vel = numpy.tile(vel, (2, 1))
-      writerecord(icfile, vel)
-      vel = None
-  
-      # id
-      # first four bits are left for gadget
-      # the coming bit is gas or dm.
-      # the coming 7 bits is ilevel.
-      # then is the grid position.
-      # this system supports a mesh size of 512K.
-      if makegas:
-        id = numpy.empty(Npar + Npar, dtype=args.iddtype)
-      else:
-        id = numpy.empty(Npar, dtype=args.iddtype)
-
-      bits = args.iddtype.itemsize * 8
-      if args.idscheme == 'mesh':
-        id[:Npar] = numpy.ravel_multi_index(data['gps'].T, (Nmesh, Nmesh, Nmesh))
-        if makegas:
-          id[Npar:] = id[:Npar]
-          id[:Npar] |= args.iddtype.type(1L << (bits - 5))
-
-        id[:] |= args.iddtype.type(ilevel << (bits - 12))
-      else:
-        id[:] = numpy.arange(IDstart, len(id) + IDstart)
-
-
-      writerecord(icfile, id)
-      id = None
-  
-      # mass
-      if usemasstab:
-        if makegas:
-          mass = numpy.empty(Npar, dtype='f4')
-          mass[:] = args.OmegaB * critical_mass
-          writerecord(icfile, mass)
-          mass = None 
-      else:
-        if makegas:
-          mass = numpy.empty(Npar + Npar, dtype='f4')
-          mass[:Npar] = args.OmegaB * critical_mass
-          mass[Npar:] = (args.OmegaM - args.OmegaB) * critical_mass
-        else:
-          mass = numpy.empty(Npar, dtype='f4')
-          mass[:Npar] = args.OmegaM * critical_mass
-        writerecord(icfile, mass)
-        mass = None 
-      # ie ( all zeros)
-      if makegas:
-        ie = numpy.zeros(Npar, dtype='f4')
-        writerecord(icfile, ie)
-        ie = None
-    return header
-
-  def interpolate(data, Nmesh, prev):
-    # the DownSample interpolation.
-    # first find the corresponding lowerlevel points
-    # prev is returned from preserve()
-    dataPrev, indexPrev, NmeshPrev = prev
-    index = numpy.ravel_multi_index(data['gps'].T / (Nmesh / NmeshPrev),
-               (NmeshPrev, NmeshPrev, NmeshPrev))
-    print Nmesh, 'index', index.min(), index.max()
-    arg = indexPrev.searchsorted(index, 'left')
-    if not (indexPrev[arg] == index).all():
-      print indexPrev, index
-      print 'assertion failure for these points', Nmesh, NmeshPrev
-      raise Exception(" We cannot continue")
-        # then add them to the current level
-    data['disp'] += dataPrev['disp'][arg]
-    data['delta'] += dataPrev['delta'][arg]
-
-  def preserve(data, mask, Nmesh):
-    # downsample levels need to carry on the interpolation
-    # of previous level
-    # we use the corresponding upper level values.
-    # It really should have been a fourier interploation.
-    # first save them to a temp place
-    # then load them after the 'fill' step is done.
-    dataPrev = data[holemask] 
-    indexPrev = numpy.ravel_multi_index(dataPrev['gps'].T, (Nmesh, Nmesh, Nmesh))
-    arg = indexPrev.argsort()
-    dataPrev = dataPrev[arg]
-    indexPrev = indexPrev[arg]
-    print Nmesh, 'hole', dataPrev['gps'].min(axis=0), dataPrev['gps'].max(axis=0), indexPrev.min(), indexPrev.max(), indexPrev
-    return dataPrev, indexPrev, Nmesh
-
-  H = []
-  fid = 0
-  IDstart = 0
-  for i, Nmesh in enumerate(args.Levels):
-    print i, Nmesh
-    data = setup_level(Nmesh)
-
-    if i > 0:
-      # if there is a parent level, clip the current level
-      # to fill in the space of the parent level
-      NmeshPrev = args.Levels[i - 1]
-      assert Nmesh % NmeshPrev == 0
-      fillmask = dig(data, Nmesh, scale=args.Scale[Nmesh], Align=NmeshPrev)
-      data = data[fillmask]
-      if args.DownSample[Nmesh] > 1:
-        interpolate(data, Nmesh, prev)
-
-    if i < len(args.Levels) - 1:
-      # if there is a refine level, dig a hole from the current level
-      # leaving space for the next level.
-      NmeshNext = args.Levels[i + 1]
-      assert NmeshNext % Nmesh == 0
-      holemask = dig(data, Nmesh, scale=args.Scale[NmeshNext])
-      if args.DownSample[NmeshNext] > 1:
-        prev = preserve(data, holemask, Nmesh)
-      data = data[~holemask]
-
-    # now data contains the region to be saved.
-    nchunks = int(numpy.ceil(len(data) / (1.0 * args.Npar)))
-    datasp = numpy.array_split(data, nchunks)
-    for k in range(nchunks):
-      fname = '%s.%d' % (args.prefix, fid + k)
-      H.append((fname, write_gadget(fname, Nmesh, datasp[k], i, IDstart)))
-      IDstart = IDstart + len(data)
-      if args.MakeGas[Nmesh]:
-        IDstart = IDstart + len(data)
-    fid = fid + nchunks
-
-  Ntot = numpy.zeros(6, dtype='i8')
-  masstab = numpy.zeros(6, dtype='f8')
-
-  for fname, header in H:
-    Ntot += header['N']
-    mask = header['mass'] != 0
-    masstab[mask] = header['mass'][mask]
-  print 'total particles written', Ntot
-  for fname, header in H:
-    header['mass'] = masstab
-    header['Ntot_low'][:] = (Ntot & 0xffffffff)
-    header['Ntot_high'][:] = (Ntot >> 32)
-    header['Nfiles'] = len(H)
-  
-    print fname, header['N']
-    rewrite_header(fname, header)
-
-def main():
+def main(args):
   if args.format == 'gadget':
-    gadget()
+    from gadgetmodule import gadget
+    gadget(args)
   elif args.format == 'ramses':
-    ramses()
+    ramses(args)
 
-main()
+if __name__ == '__main__':
+  main(parseargs())
