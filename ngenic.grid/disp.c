@@ -233,20 +233,20 @@ void fill_PK(int ax) {
                 double re, im;
                 switch(ax) {
                     case 0:
-                        re = -ktable[i] / kmag2 * delta * sin(phase);
-                        im = ktable[i] / kmag2 * delta * cos(phase);
-                        break;
                     case 1:
-                        re = -ktable[j] / kmag2 * delta * sin(phase);
-                        im = ktable[j] / kmag2 * delta * cos(phase);
-                        break;
                     case 2:
-                        re = -ktable[k] / kmag2 * delta * sin(phase);
-                        im = ktable[k] / kmag2 * delta * cos(phase);
+                        int dir[3] = {i, j, k};
+                        re = sin(phase);
+                        im = cos(phase);
+                        delta *= ktable[dir[ax]] / kmag2;
+                        re *= -delta;
+                        im *= delta;
                         break;
                     case 3:
-                        re = delta * cos(phase);
-                        im = delta * sin(phase);
+                        im = sin(phase);
+                        re = cos(phase);
+                        re *= delta;
+                        im *= delta;
                         break;
                     default:
                         g_error("never reach here, ax is not 0 1 2 3");
