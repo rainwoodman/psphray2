@@ -16,6 +16,19 @@ parser.add_argument("-N", "--num-particles",
                help="Number of DM particles per file. \
                      For levels with Gas the total number in a file will be twice of this",
                     default=1024 * 1024 * 4, dest='Npar', type=int);
+parser.add_argument("--iddtype",  choices=['uint32', 'uint64'],
+               help="bit width of the id field",
+               default=numpy.uint64, dest='iddtype', type=numpy.dtype)
+
+parser.add_argument("--idscheme",  choices=['seq', 'mesh'],
+               help="Format of the id. 'serial' is to sequentially \
+                     assign particle ids. \
+                     for 'mesh', the 64 bit id = 4 bits empty,\
+                                          1 bit  gas(1)/dm(0), \
+                                          7 bit level index, \
+                             52 bits serial mesh index for that level ",
+                     default='mesh', dest='idscheme')
+                     
 parser.add_argument("-o", "--prefix", 
                help="Prefix of the IC files. \
                      Do not forget to put a filename base. \
@@ -196,7 +209,7 @@ def setup_innerlevel(Nmesh):
   for i, region in enumerate(args.Regions):
     mask = r == i
     data = numpy.empty(mask.sum(), dtype=[
-           ('gps', ('i8', 3)), 
+           ('gps', ('i4', 3)), 
            ('disp', ('f4', 3)),
            ('delta', 'f4')])
     data['gps'][:, 0], data['gps'][:, 1], data['gps'][:, 2] = numpy.unravel_index(index[mask], meta['Size'][i])
@@ -215,7 +228,7 @@ def setup_innerlevel(Nmesh):
 
 def setup_baselevel(Nmesh):
   data = numpy.empty((Nmesh, Nmesh, Nmesh), dtype=[
-           ('gps', ('i8', 3)), 
+           ('gps', ('i4', 3)), 
            ('disp', ('f4', 3)),
            ('delta', 'f4')])
 
@@ -335,7 +348,7 @@ def gadget():
     with file(fname, 'r+') as icfile:
       writerecord(icfile, header)
     
-  def write_gadget(fname, Nmesh, data):
+  def write_gadget(fname, Nmesh, data, ilevel, IDStart=None):
     ptype = args.DMptype[Nmesh]
     makegas = args.MakeGas[Nmesh]
 
@@ -387,13 +400,28 @@ def gadget():
       vel = None
   
       # id
+      # first four bits are left for gadget
+      # the coming bit is gas or dm.
+      # the coming 7 bits is ilevel.
+      # then is the grid position.
+      # this system supports a mesh size of 512K.
       if makegas:
-        id = numpy.empty(Npar + Npar, dtype=('i4', 2))
-        id[:, 0] = numpy.arange(Npar + Npar)
+        id = numpy.empty(Npar + Npar, dtype=args.iddtype)
       else:
-        id = numpy.empty(Npar, dtype=('i4', 2))
-        id[:, 0] = numpy.arange(Npar)
-      id[:, 1] = len(args.Levels) - i - 1
+        id = numpy.empty(Npar, dtype=args.iddtype)
+
+      bits = args.iddtype.itemsize * 8
+      if args.idscheme == 'mesh':
+        id[:Npar] = numpy.ravel_multi_index(data['gps'].T, (Nmesh, Nmesh, Nmesh))
+        if makegas:
+          id[Npar:] = id[:Npar]
+          id[:Npar] |= args.iddtype.type(1L << (bits - 5))
+
+        id[:] |= args.iddtype.type(ilevel << (bits - 12))
+      else:
+        id[:] = numpy.arange(IDstart, len(id) + IDstart)
+
+
       writerecord(icfile, id)
       id = None
   
@@ -455,6 +483,7 @@ def gadget():
 
   H = []
   fid = 0
+  IDstart = 0
   for i, Nmesh in enumerate(args.Levels):
     print i, Nmesh
     data = setup_level(Nmesh)
@@ -484,7 +513,10 @@ def gadget():
     datasp = numpy.array_split(data, nchunks)
     for k in range(nchunks):
       fname = '%s.%d' % (args.prefix, fid + k)
-      H.append((fname, write_gadget(fname, Nmesh, datasp[k])))
+      H.append((fname, write_gadget(fname, Nmesh, datasp[k], i, IDstart)))
+      IDstart = IDstart + len(data)
+      if args.MakeGas[Nmesh]:
+        IDstart = IDstart + len(data)
     fid = fid + nchunks
 
   Ntot = numpy.zeros(6, dtype='i8')
