@@ -18,7 +18,7 @@ parser.add_argument("-N", "--num-particles",
                     default=1024 * 1024 * 4, dest='Npar', type=int);
 parser.add_argument("--iddtype",  choices=['uint32', 'uint64'],
                help="bit width of the id field",
-               default=numpy.uint64, dest='iddtype', type=numpy.dtype)
+               default=numpy.dtype(numpy.uint64), dest='iddtype', type=numpy.dtype)
 
 parser.add_argument("--idscheme",  choices=['seq', 'mesh'],
                help="Format of the id. 'serial' is to sequentially \
