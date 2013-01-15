@@ -270,7 +270,7 @@ def ramses():
     else:
       header['np'][:] = args.Meta[Nmesh]['Size'][0]
       header['xo'][:] = header['dx'] * args.Meta[Nmesh]['Offset'][0]
-      r = readblock(Nmesh, 'region', 'u1')
+      r = readblock(Nmesh, 'region', 'u4')
       mask = r == 0
     header['dx'] = boxsize / Nmesh
     header['astart'] = args.a
