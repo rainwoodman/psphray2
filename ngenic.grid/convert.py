@@ -364,8 +364,7 @@ def gadget():
       writerecord(icfile, header)
   
       # position
-      pos = numpy.float32(data['gps']) * args.BoxSize
-      pos /= Nmesh
+      pos = (numpy.float32(data['gps']) + 0.5) * (1.0 * args.BoxSize / Nmesh)
       if not args.nodisp:
         pos += data['disp']
       if makegas: 
