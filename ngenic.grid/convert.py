@@ -40,6 +40,15 @@ def parseargs():
   parser.add_argument("-q", '--cubic', 
                  help="Use an axis-aligned box for the zoom region, instead of spheres", 
                      action='store_true', default=False)
+  parser.add_argument("-B", "--base", 
+                 help="treat the base level like the finest level, \
+                       and skip all other levels. \
+                       In other words, write the entire base level mesh, \
+                       into particle type specified in the finest level, \
+                       generating gas if the finest level says so. \
+                       ", 
+                 action="store_true", default=False)
+
   parser.add_argument('--no-displacement', dest='nodisp', 
                   help="Do not displace the position of particles. \
                         Physics will be corrupted. Do not use", 
@@ -125,8 +134,12 @@ UnitVelocity_in_cm_per_s = 1e5
     args.MakeGas[n] = g
     args.DownSample[n] = d
     args.Meta[n] = read_meta(n, args.datadir)
+
   args.Levels = numpy.array(Levels, dtype='i8')
   args.Levels.sort()
+
+  assert args.Scale[args.Levels[0]] == 0.0
+
   for Nmesh in args.Levels:
     if args.DMptype[Nmesh] == -1:
       if Nmesh == args.Levels.max():
@@ -135,6 +148,14 @@ UnitVelocity_in_cm_per_s = 1e5
       else:
         args.DMptype[Nmesh] = 2
         args.MakeGas[Nmesh] = False
+
+  if args.base: 
+    Base = args.Levels[0]
+    last = args.Levels[-1]
+    args.DMptype[Base] = args.DMptype[last]
+    args.MakeGas[Base] = args.MakeGas[last]
+    args.Levels = args.Levels[:1]
+
       
   return args
 
@@ -173,7 +194,11 @@ def readblock(Nmesh, block, dtype, args):
         f = f + 1
       #skip the tasks that do not dump any files
   print Nmesh, block, f, 'files read'
-  return numpy.concatenate(content)
+  content = numpy.concatenate(content)
+  if len(content) == 0:
+    raise Exception("the Nmesh = %d has no content(too small), has to terminate"
+                % Nmesh)
+  return content
 
 def ramses(args):
   def write_ramses(header, Nmesh, name, buffer):
