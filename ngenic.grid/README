@@ -34,7 +34,9 @@ Requirements
 
 Installation
 ============
-  
+  make sure you have cloned the entire psphray repository (which is
+  very small, comparing to some physics codebase's ~10 GB svn repositories)
+
   copy Makefile.local.template to Makefile.local
   edit and fill in the location of 
 
@@ -44,7 +46,7 @@ Installation
 
   specify c compiler CC
   
-  then use make.
+  then use make in ngenic.grid directory.
 
 
 Known Problems
