@@ -1,28 +1,130 @@
+N-GenIC.grid
+============
+
 This is a grid version of the GADGET IC generator.
+The math has been take from N-GenIC.v2 and carefully preserved.
 
-It use the psphray2 code for configuration files and IO.
+P-Sphray2 framework is used for configuration files and IO.
 
-To generate an IC, three steps shall be done:
+Requirements
+============
 
-0. write the paramfile (see datadir/paramfile for example)
-1. On a super computer with huge memory, run
-   ngenic.grid paramfile Nmesh
-   for each desired mesh size(Nmesh) with MPI.
-   this step calculates the FFT and dump the displacement field
-   of selected regions at given sizes and positions.
-   the computer needs to hold the entire FFT grid of the largest Nmesh
+- A recent version of GLib's glib core components ( >= 2.32)
+  a static custom build is recommended, refer to install-glib.sh
+  at source root.
+- gsl (>= 1.14)
+- fftw3
 
-2. On the same super computer, with a free small node attached 
-   to the same filesystem, run
-   ngenic.grid -I paramfile Nmesh
-   for each desired mesh size Nmesh, without MPI.
-   (for the base level Nmesh this code will fail)
-   this step creates the index of the points dumped in the first step
+- numpy >= 1.6 (tested against 1.8 dev branch)
 
-3. On a large shared memory machine, enough memory 
-   to hold the entire zoom IC * ~2,
-   run 
+Known Problems
+==============
+
+- appears to be a limitation of FFTW3, but Nsample=Nmesh/DownSampling
+  is better divided by the number of MPI processors.
+
+- make sure the zoom region contains at least one mesh grid in the
+  base level. Otherwise convert.py may fail
+
+- on numpy 1.5 the code throws exception from ravel_multi_index
+  and unravel_index. It is a limitation with numpy 1.5 that these
+  functions accept only scalar inputs.
+
+Work Flow
+==========
+1. Calculates the FFT and save the displacement/density field.
+   
+   Only the part of the field that covers the zoom region, plus
+   the entire base level field are saved to disk.
+
+   The IO is in parallel. Each MPI process will dump its own file.
+   Naming of the files ensure that:
+   As long as files are read-in in ascii order in names,
+   results from runs of different MPI are the same. (within fftw numerical
+   errors)
+
+   Memory is allocated to hold a real inverse FFT of Nsample ** 3 
+   (Nsample = Nmesh / DownSample) for that level. 
+   There is also a Nsample ** 2 table of the random seeds.
+
+   mpirun [.....] -np Ncpu [...] ./ngenic.grid paramfile Nmesh
+
+   Ncpu must divide Nmesh, due to a possible limitation in fftw-3.
+   This has to be invoked for each Nmesh, with different Ncpu settings
+   to save computation resources. 
+
+   On 200 cpus (2Ghz), a Nmesh=3200 takes around 1.4GB memory and peaks
+   to 1.5 ~ 1.7 at FFTW; finishing in ~ 30 mins (depending on amount of IO)
+   
+   Files written to the scratch starts with delta-, dispx-, dispy-, and dispz-
+
+2. Build the index.
+   ./ngenic.grid -I paramfile Nmesh
+   
+   Notice the add -I flag. This step use very little memory and is quite
+   fast. There is usually no need to farm it out to MPI, but if farmed out
+   it is allowed to use a different Ncpu.
+   Files written to the scratch starts with index- and region-.
+
+3. Assemble the IC for gadget / ramses.
+
    python convert.py paramfile {gadget|ramses}
-   to produce the final IC file for gadget or ramses
 
+   convert.py accepts a lot of arguments, mostly for GADGET.
+   help can be consoluted on site with
+
+   python convert.py -h
+
+   useful ones: 
+     -N : number of dm particles per file. A smaller number will
+          help Gadget balance in the first run.
+     -B : generate an IC of the base level, but pretending it
+          is the finest level.
+     --prefix : the prefix of the IC the real filename will be
+                prefix.%d. It can contain a path.
+
+     -q : instead of using spherical regions, use bounding boxes.
+     --idtype:  either uint64 or uint32, deciding whether LONGID is
+               enabled.
+
+Appendix: Paramfile Format
+=========================
+see datadir/paramfile for example
+
+   - the cosmology, [Cosmology]
+   - location of scratch space (datadir)
+   - units [Units]
+   - initial IC, sigma8. [IC]
+
+   - select zoom regions [Regions]
+   - define zoom levels [Levels]
+      - each level contains up to 4 fields
+        Nmesh, Scale, ptype, DownSample
+        Nmesh: The effective mesh size, covering the entire box.
+               The Nmesh of adjacent levels must divide.
+        Scale: factor to multiple the size of each region for this
+               level it has to be increasing as the mesh gets
+               coarser. However, for the base mesh (coarsest), 
+               Scale must be 0.
+        ptype: the GADGET particle type of the dark matter particle
+               can be a number, 0-5 [usually 1, 2, or 3, as 0 is
+               reserved for gas and 4 for star, 5 for blackholes]
+               can also add a 'g' after the number, indicating
+               corresponding gas particles for this level will be
+               created, too. The total mass of gas + dm is
+               OmegaM * critcial_mass per particle.
+        DownSample: DownSample the K-space from Nmesh by this factor.
+               The step size for K is 2 pi * DownSample / BoxSize,
+               resulting Nsample = Nmesh / DownSample, reducing
+               memory usage siginificantly. 
+               DownSample need to divide Nmesh.
+               Corresponding boxsize is effectly divied by DownSample
+               and the density/displacement field is replicated to
+               cover the entire space.
+               When DownSample is enabled, the first phase will
+               write out only the pertubations due to high K that
+               are not yet covered in previous modes.
+               The random number sequence is sampled for each 
+               consecutive 2 pi / BoxSize K value, thus the realization
+               is roughly identical for different DownSampling values.
 
