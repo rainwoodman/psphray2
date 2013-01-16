@@ -1,0 +1,15 @@
+
+PSPHRAY2
+========
+
+Parallel SPH Ray Tracing v2
+
+This is very much a work in progress.
+
+src/ the main code of the ray tracer
+ngenic.grid/ initial condition generator for GADGET/ RAMSES (eventually
+   also PSPHRAY-2 if hydro and gravity are added)
+
+See README in each subdirectory, for installation, etc.
+
+
