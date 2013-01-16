@@ -36,6 +36,11 @@ Installation
 ============
   make sure you have cloned the entire psphray repository (which is
   very small, comparing to some physics codebase's ~10 GB svn repositories)
+  from 
+   
+  git clone git://github.com/rainwoodman/psphray2.git
+  consult install-glib.sh in top level code directory if GLib is not
+  installed (rare on modern systems), or version is too low.
 
   copy Makefile.local.template to Makefile.local
   edit and fill in the location of 
