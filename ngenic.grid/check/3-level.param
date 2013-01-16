@@ -1,0 +1,38 @@
+[IO]
+# used as a scratch space for intermediate disp dump files
+datadir = 3-level
+
+[IC]
+Seed = 181170
+BoxSize = 533333.0
+# beginning time 
+a = 0.00625
+Sigma8 = 0.8
+WhichSpectrum=1
+PrimordialIndex=0.96
+ShapeGamma=0.201
+
+[Levels]
+# Nmesh, scale region size factor,[dm ptype], [DownSamplingFactor]
+Level1 = 64, 0; 3; 1
+Level2 = 128, 1; 2; 1
+Level3 = 256, 0.5; 1g; 2
+
+[Regions]
+# center x, y, z; size x[, y, z]
+Zoom1 = 412771.0,397631.0, 310176.0; 100000
+#Zoom2 = 200,200,230; 50
+
+[Cosmology]
+h=0.72
+H=0.1
+G=43007.1
+C=2.9979e5
+OmegaB=0.044
+OmegaM=0.26
+OmegaL=0.74
+
+[Unit]
+UnitLength_in_cm=3.085678e+21
+UnitMass_in_g=1.989e+43
+UnitVelocity_in_cm_per_s=100000

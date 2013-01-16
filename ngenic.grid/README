@@ -2,29 +2,60 @@ N-GenIC.grid
 ============
 
 This is a grid version of the GADGET IC generator.
-The math has been take from N-GenIC.v2 and carefully preserved.
+It produces initial condition files for GADGET and RAMSES from the
+same power spectrum realization.
 
-P-Sphray2 framework is used for configuration files and IO.
+The math code has been take from N-GenIC.v2 and carefully preserved.
+Any derivation is a bug. 
+
+Notable optimization to the original math code:
+  The FFT has been pre-transposed, saving communication time.
+  Unnecesserily repeated calculation in EH power spectrum function 
+  has been removed.
+
+P-SPHRAY2 framework is used for configuration files and IO.
+
+Two components:
+  - a binary that runs with MPI to produce the density realization
+    of the power spectrum, and;
+  - a python script that assembles IC files.
+
 
 Requirements
 ============
 
-- A recent version of GLib's glib core components ( >= 2.32)
-  a static custom build is recommended, refer to install-glib.sh
-  at source root.
-- gsl (>= 1.14)
-- fftw3
+ - A recent version of GLib's glib core components ( >= 2.32)
+   a static custom build is recommended, refer to install-glib.sh
+   at source root.
+ - gsl (>= 1.14)
+ - fftw3
+ 
+ - numpy >= 1.6 (tested against 1.8 dev branch)
 
-- numpy >= 1.6 (tested against 1.8 dev branch)
+Installation
+============
+  
+  copy Makefile.local.template to Makefile.local
+  edit and fill in the location of 
+
+  GLIB, 
+  GSL,
+  FFTW
+
+  specify c compiler CC
+  
+  then use make.
+
 
 Known Problems
 ==============
 
 - appears to be a limitation of FFTW3, but Nsample=Nmesh/DownSampling
-  is better divided by the number of MPI processors.
+  is better divided by the number of MPI processors. Otherwise FFTW
+  will crash with an assertion error.
 
 - make sure the zoom region contains at least one mesh grid in the
-  base level. Otherwise convert.py may fail
+  base level. Otherwise convert.py may fail.
 
 - on numpy 1.5 the code throws exception from ravel_multi_index
   and unravel_index. It is a limitation with numpy 1.5 that these
@@ -32,6 +63,10 @@ Known Problems
 
 Work Flow
 ==========
+3 steps. Please also look at the paramfile format(appendix).
+
+1 & 2 are independent. However, they must be finished before 3.
+
 1. Calculates the FFT and save the displacement/density field.
    
    Only the part of the field that covers the zoom region, plus
@@ -61,9 +96,9 @@ Work Flow
 2. Build the index.
    ./ngenic.grid -I paramfile Nmesh
    
-   Notice the add -I flag. This step use very little memory and is quite
+   Notice the added -I flag. This step use very little memory and is quite
    fast. There is usually no need to farm it out to MPI, but if farmed out
-   it is allowed to use a different Ncpu.
+   a different Ncpu is allowed.
    Files written to the scratch starts with index- and region-.
 
 3. Assemble the IC for gadget / ramses.
@@ -78,14 +113,16 @@ Work Flow
    useful ones: 
      -N : number of dm particles per file. A smaller number will
           help Gadget balance in the first run.
-     -B : generate an IC of the base level, but pretending it
-          is the finest level.
+     -B : generate an IC of the base level, pretending it
+          is the finest level, however.
      --prefix : the prefix of the IC the real filename will be
-                prefix.%d. It can contain a path.
+                prefix.%d. It can contain a path. The default is `IC'.
 
      -q : instead of using spherical regions, use bounding boxes.
      --idtype:  either uint64 or uint32, deciding whether LONGID is
                enabled.
+     --idscheme: seq or mesh, mesh is default, where the particle
+               id is an encoded version of it's original mesh position.
 
 Appendix: Paramfile Format
 =========================
@@ -97,34 +134,47 @@ see datadir/paramfile for example
    - initial IC, sigma8. [IC]
 
    - select zoom regions [Regions]
-   - define zoom levels [Levels]
-      - each level contains up to 4 fields
-        Nmesh, Scale, ptype, DownSample
-        Nmesh: The effective mesh size, covering the entire box.
-               The Nmesh of adjacent levels must divide.
-        Scale: factor to multiple the size of each region for this
-               level it has to be increasing as the mesh gets
-               coarser. However, for the base mesh (coarsest), 
-               Scale must be 0.
-        ptype: the GADGET particle type of the dark matter particle
-               can be a number, 0-5 [usually 1, 2, or 3, as 0 is
-               reserved for gas and 4 for star, 5 for blackholes]
-               can also add a 'g' after the number, indicating
-               corresponding gas particles for this level will be
-               created, too. The total mass of gas + dm is
-               OmegaM * critcial_mass per particle.
-        DownSample: DownSample the K-space from Nmesh by this factor.
-               The step size for K is 2 pi * DownSample / BoxSize,
-               resulting Nsample = Nmesh / DownSample, reducing
-               memory usage siginificantly. 
-               DownSample need to divide Nmesh.
-               Corresponding boxsize is effectly divied by DownSample
-               and the density/displacement field is replicated to
-               cover the entire space.
-               When DownSample is enabled, the first phase will
-               write out only the pertubations due to high K that
-               are not yet covered in previous modes.
-               The random number sequence is sampled for each 
-               consecutive 2 pi / BoxSize K value, thus the realization
-               is roughly identical for different DownSampling values.
+     a region contains up to 6 numbers,
+     X, Y, Z, SX, SY, SZ
 
+     X, Y, Z is position of the center
+     SX, SY, SZ gives the size of the region. (NOT the radius)
+     SY SZ are optional, if omitted, SX will be used.
+     
+   - define zoom levels [Levels]
+     each level contains up to 4 fields
+     Nmesh, Scale, ptype, DownSample
+     ptype and DownSample are optional.
+     The default of ptype is '1g' for finest level
+     and '2' for the rest.
+     The default of DownSample is always 1.
+ 
+     Nmesh: The effective mesh size, covering the entire box.
+            The Nmesh of adjacent levels must divide.
+     Scale: factor to multiple the size of each region for this
+            level it has to be increasing as the mesh gets
+            coarser. However, for the base mesh (coarsest), 
+            Scale must be 0.
+     ptype: the GADGET particle type of the dark matter particle
+            can be a number, 0-5 [usually 1, 2, or 3, as 0 is
+            reserved for gas and 4 for star, 5 for blackholes]
+            can also add a 'g' after the number, indicating
+            corresponding gas particles for this level will be
+            created, too. The total mass of gas + dm is
+            OmegaM * critcial_mass per particle.
+     DownSample: DownSample the K-space from Nmesh by this factor.
+            The step size for K is 2 pi * DownSample / BoxSize,
+            resulting Nsample = Nmesh / DownSample, reducing
+            memory usage siginificantly. 
+            DownSample need to divide Nmesh.
+            Corresponding boxsize is effectly divied by DownSample
+            and the density/displacement field is replicated to
+            cover the entire space.
+            When DownSample is enabled, the first phase will
+            write out only the pertubations due to high K that
+            are not yet covered in previous modes.
+            The random number sequence is sampled for each 
+            consecutive 2 pi / BoxSize K value, thus the realization
+            is roughly identical for different DownSampling values.
+
+There is an example in check/
