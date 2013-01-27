@@ -1,6 +1,8 @@
 import numpy
 import os.path
 from convert import readblock
+from trilinearinterp import trilinearinterp
+
 args = None
 
 GHEADER = numpy.dtype([
@@ -40,6 +42,9 @@ def gadget(_args):
       dig(this, next)
     else: 
       next = None
+    bigdispcount = (this.data['disp'] > args.BoxSize / this.Nmesh).sum()
+    if bigdispcount > 0:
+      print bigdispcount, ' > mesh division', args.BoxSize / this.Nmesh, 'expecting ugly effects'
     HH, IDstart = write_gadget(this, FID, IDstart)
     FID += len(HH)
     H += HH
@@ -140,22 +145,24 @@ def dig(this, next):
   print index_from_next, label
   # check mass conservation 
   assert (numpy.bincount(label) == (next.Nmesh // this.Nmesh) ** 3).all()
+  if next.DownSample > 1:
+    # downsample levels need to carry on the interpolation
+    # of previous level
+    next.data['delta'] += trilinearinterp(next.data['gps'] * (1.0 * this.Nmesh / next.Nmesh),
+                    this.data['gps'], 
+                    this.data['delta'], 
+                   (next.Nmesh, next.Nmesh, next.Nmesh))
+    next.data['disp'] += trilinearinterp(next.data['gps'] * (1.0 * this.Nmesh / next.Nmesh),
+                    this.data['gps'], 
+                    this.data['disp'], 
+                   (next.Nmesh, next.Nmesh, next.Nmesh))
   # index this level
   index = numpy.ravel_multi_index(this.data['gps'].T, (this.Nmesh, this.Nmesh, this.Nmesh))
   # locate those to be removed
   ind = index_from_next.searchsorted(index)
   covered_mask = (index_from_next.take(ind, mode='clip') == index)
+
   assert covered_mask.sum() == len(index_from_next)
-  if next.DownSample > 1:
-    # downsample levels need to carry on the interpolation
-    # of previous level
-    # we use the corresponding upper level values.
-    # It really should have been a fourier interploation.
-    datainnext = this.data[covered_mask]
-    arg = index[covered_mask].argsort()
-    assert (index[covered_mask][arg] == index_from_next).all()
-    next.data['disp'] += datainnext['disp'][arg[label]]
-    next.data['delta'] += datainnext['delta'][arg[label]]
   preserve_mask = ~covered_mask
   this.data = this.data[preserve_mask]
 

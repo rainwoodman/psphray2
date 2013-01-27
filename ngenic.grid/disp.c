@@ -103,7 +103,7 @@ void fill_PK(int ax) {
     int kmod;
     /* What this does 
      *
-     * delta = K0 **  3/2 * (DownSampling ** 3) * FFT ( delta_k * S(k)) * 
+     * delta = K0 **  3/2 * (DownSampling ** 1.5) * FFT ( delta_k * S(k)) * 
      *       = K0 ** -3/2 * CFT ( delta_k * S(k))
      * where S is the selection function.
      *
@@ -118,8 +118,8 @@ void fill_PK(int ax) {
     double Kthresh = K0 * Nmesh / 2;
     double KthreshBefore = K0 * NmeshBefore / 2;
     /* Dplus scale back to starting redshift */
-    /* DownSample ** 3 corrects for FFT<->CFG */
-    double fac = pow(K0, 1.5) * pow(DownSample, 3) / Dplus; 
+    /* DownSample ** 3 corrects for FFT<->CFT */
+    double fac = pow(K0, 1.5) * pow(DownSample, 1.5) / Dplus; 
 
    double * ktable = g_new0(double, Nmesh);
    double * k2table = g_new0(double, Nmesh);
