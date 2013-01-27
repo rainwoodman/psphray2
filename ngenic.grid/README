@@ -122,6 +122,15 @@ Work Flow
           help Gadget balance in the first run.
      -B : generate an IC of the base level, pretending it
           is the finest level, however.
+          -B takes an integer = R, where R is the ratio 
+          to scale the base level. EG, if the base level has been
+          produced with Nmesh=400, -B=4 will actuallly write out
+          an IC of Nmesh=100, by scaling the Nmesh=400 dumps.
+          sometimes if you do not supply an argument to -B and it 
+          is immediately before the paramfile name, use '--' to split them
+          on the commandline. eg 
+             python convert.py -B -- paramfile
+
      --prefix : the prefix of the IC the real filename will be
                 prefix.%d. It can contain a path. The default is `IC'.
 
