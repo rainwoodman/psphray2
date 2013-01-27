@@ -40,14 +40,15 @@ def parseargs():
   parser.add_argument("-q", '--cubic', 
                  help="Use an axis-aligned box for the zoom region, instead of spheres", 
                      action='store_true', default=False)
-  parser.add_argument("-B", "--base", 
+  parser.add_argument("-B", "--base", nargs='?',
                  help="treat the base level like the finest level, \
                        and skip all other levels. \
                        In other words, write the entire base level mesh, \
                        into particle type specified in the finest level, \
                        generating gas if the finest level says so. \
+                       accepts --base=N where the base will be downsampled to Nmesh/N. \
                        ", 
-                 action="store_true", default=False)
+                 action="store", default=False, const=1)
 
   parser.add_argument('--no-displacement', dest='nodisp', 
                   help="Do not displace the position of particles. \
@@ -150,13 +151,18 @@ UnitVelocity_in_cm_per_s = 1e5
         args.MakeGas[Nmesh] = False
 
   if args.base: 
-    Base = args.Levels[0]
+    # set up the base Nmesh to coarses Nmesh / args.base,
+    # and rely on readblock to scale to the new Nmesh / args.base
+    # file downsample
+    first = args.Levels[0]
+    # must divide the base level
+    assert first % args.base == 0
+    Base = first / args.base
     last = args.Levels[-1]
     args.DMptype[Base] = args.DMptype[last]
     args.MakeGas[Base] = args.MakeGas[last]
-    args.Levels = args.Levels[:1]
-
-      
+    args.Levels = numpy.array([Base], dtype='i8')
+    args.Meta[Base] = args.Meta[first]
   return args
 
 def read_meta(Nmesh, datadir):
@@ -165,13 +171,30 @@ def read_meta(Nmesh, datadir):
     exec(metalines, meta)
     return meta
 
+def scale(Nmesh, src, ratio):
+  Nmeshsrc = Nmesh * ratio
+  # must be covering the full space
+  assert Nmeshsrc ** 3 == len(src)
+  src = src.reshape(Nmesh, ratio, Nmesh, ratio, Nmeshsrc, ratio)
+  return src.sum(axis=(5, 3, 1)).ravel()
+
 def readblock(Nmesh, block, dtype, args):
+  if args.base:
+    Nmesh = Nmesh * args.base
+    # doesn't make sense no region and index block
+    # on the base level.
+    # and scaling them is nonsense.
+    assert block != 'region' 
+    assert block != 'index'
+      
+
   header = {}
   exec(
     file('%s/%s-%d.header' % (args.datadir, block, Nmesh)).read(), 
     header)
   NTask = header['NTask']
   DownSample = header['DownSample']
+  # otherwise getting a wrong file.
   assert DownSample == args.DownSample[Nmesh]
 
   width1 = len(str(DownSample))
@@ -198,6 +221,9 @@ def readblock(Nmesh, block, dtype, args):
   if len(content) == 0:
     raise Exception("the Nmesh = %d has no content(too small), has to terminate"
                 % Nmesh)
+  if args.base:
+    content = scale(Nmesh, content, args.base)
+
   return content
 
 def ramses(args):
