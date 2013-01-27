@@ -176,8 +176,9 @@ def scale(Nmesh, src, ratio):
   # must be covering the full space
   assert Nmeshsrc ** 3 == len(src)
   src = src.reshape(Nmesh, ratio, Nmesh, ratio, Nmeshsrc, ratio)
-  return src.sum(axis=(5, 3, 1)).ravel()
-
+  src = src.sum(axis=(5, 3, 1)).ravel()
+  src /= (ratio ** 3)
+  return src
 def readblock(Nmesh, block, dtype, args):
   if args.base:
     Nmesh = Nmesh * args.base
