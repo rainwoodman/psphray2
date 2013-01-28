@@ -48,7 +48,7 @@ def parseargs():
                        generating gas if the finest level says so. \
                        accepts --base=N where the base will be downsampled to Nmesh/N. \
                        ", 
-                 action="store", default=False, const=1)
+                 action="store", default=False, const=1, type=int)
 
   parser.add_argument('--no-displacement', dest='nodisp', 
                   help="Do not displace the position of particles. \
@@ -163,6 +163,8 @@ UnitVelocity_in_cm_per_s = 1e5
     args.MakeGas[Base] = args.MakeGas[last]
     args.Levels = numpy.array([Base], dtype='i8')
     args.Meta[Base] = args.Meta[first]
+    args.Scale[Base] = 0.0
+    args.DownSample[Base] = args.DownSample[first]
   return args
 
 def read_meta(Nmesh, datadir):
@@ -172,10 +174,9 @@ def read_meta(Nmesh, datadir):
     return meta
 
 def scale(Nmesh, src, ratio):
-  Nmeshsrc = Nmesh * ratio
   # must be covering the full space
-  assert Nmeshsrc ** 3 == len(src)
-  src = src.reshape(Nmesh, ratio, Nmesh, ratio, Nmeshsrc, ratio)
+  assert Nmesh ** 3 == len(src)
+  src = src.reshape(Nmesh / ratio, ratio, Nmesh / ratio, ratio, Nmesh/ ratio, ratio)
   src = src.sum(axis=(5, 3, 1)).ravel()
   src /= (ratio ** 3)
   return src
