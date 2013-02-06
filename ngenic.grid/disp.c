@@ -231,11 +231,11 @@ void fill_PK(int ax) {
                 double p_of_k = PowerSpec(kmag) * -log(ampl);
                 double delta = fac * sqrt(p_of_k);
                 double re, im;
+                int dir[3] = {i, j, k};
                 switch(ax) {
                     case 0:
                     case 1:
                     case 2:
-                        int dir[3] = {i, j, k};
                         re = sin(phase);
                         im = cos(phase);
                         delta *= ktable[dir[ax]] / kmag2;
