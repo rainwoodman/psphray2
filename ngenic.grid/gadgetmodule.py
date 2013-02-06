@@ -29,11 +29,43 @@ GHEADER = numpy.dtype([
       ('unused', ('u4', 12)),
   ])
 
+def exist(heystack, needle):
+  heystack, label = numpy.unique(heystack, return_inverse=True)
+  ind = heystack.searchsorted(needle)
+  return (heystack.take(ind, mode='clip') == needle)
+
+def gadgetpost(_args):
+  global args
+  args = _args
+
+  Ntot = numpy.zeros(6, dtype='i8')
+  masstab = numpy.zeros(6, dtype='f8')
+  from glob import glob
+  H = []
+  for fname in glob(args.prefix + '.[0-9]*'):
+    with file(fname, 'r') as f:
+      f.seek(4)
+      header = numpy.fromfile(f, GHEADER, 1).squeeze()
+      Ntot += header['N']
+      mask = header['mass'] != 0
+      masstab[mask] = header['mass'][mask]
+      H.append((fname, header))
+  print 'total particles written', Ntot
+
+  for fname, header in H:
+    header['mass'] = masstab
+    header['Ntot_low'][:] = (Ntot & 0xffffffff)
+    header['Ntot_high'][:] = (Ntot >> 32)
+    header['Nfiles'] = len(H)
+  
+    print fname, header['N']
+    rewrite_header(fname, header)
+
 def gadget(_args):
   global args 
   args = _args
   this = setup_level(0)
-  FID = 0
+  FID = args.fid
   IDstart = 0
   H = []
   while this is not None:
@@ -84,23 +116,32 @@ def setup_level(ilevel):
   return rt
 
 def setup_baselevel(Nmesh):
-  data = numpy.empty((Nmesh, Nmesh, Nmesh), dtype=[
+  data = numpy.empty((Nmesh / args.divide, Nmesh / args.divide, Nmesh / args.divide), dtype=[
            ('gps', ('i4', 3)), 
            ('disp', ('f4', 3)),
            ('delta', 'f4')])
 
-  grid1d = numpy.arange(Nmesh);
+  grid1d = numpy.arange(Nmesh / args.divide);
 
-  data['gps'][..., 2] = grid1d[None, None, :]
-  data['gps'][..., 1] = grid1d[None, :, None]
-  data['gps'][..., 0] = grid1d[:, None, None]
+  data['gps'][..., 2] = grid1d[None, None, :] + Nmesh / args.divide * args.piece[2]
+  data['gps'][..., 1] = grid1d[None, :, None] + Nmesh / args.divide * args.piece[1]
+  data['gps'][..., 0] = grid1d[:, None, None] + Nmesh / args.divide * args.piece[0]
 
   data = data.reshape(-1)
+  def pick_piece(d):
+    if args.divide > 1:
+      return d.reshape(
+        args.divide, Nmesh / args.divide, 
+        args.divide, Nmesh / args.divide, 
+        args.divide, Nmesh / args.divide)[args.piece[0], :, args.piece[1], :, args.piece[2], :].ravel()
+    else: 
+      return d
+
   for i, block in enumerate(['dispx', 'dispy', 'dispz']):
-    content = readblock(Nmesh, block, 'f4', args)
+    content = pick_piece(readblock(Nmesh, block, 'f4', args))
     data['disp'][..., i] = content
 
-  data['delta'] = readblock(Nmesh, 'delta', 'f4', args)
+  data['delta'] = pick_piece(readblock(Nmesh, 'delta', 'f4', args))
 
   return data
 
@@ -136,15 +177,18 @@ def setup_innerlevel(Nmesh):
 def dig(this, next):
   # first select active mesh from next level, aligned to this level
   next.data = next.data[activemask(next, this.Nmesh)]
+
   # calculate the index of the covered mesh on this level
   index_from_next = numpy.ravel_multi_index(
               next.data['gps'].T // (next.Nmesh // this.Nmesh),
               (this.Nmesh, this.Nmesh, this.Nmesh))
-  # only use unique ones
-  index_from_next, label = numpy.unique(index_from_next, return_inverse=True)
-  print index_from_next, label
-  # check mass conservation 
-  assert (numpy.bincount(label) == (next.Nmesh // this.Nmesh) ** 3).all()
+
+  # index this level
+  index = numpy.ravel_multi_index(this.data['gps'].T, (this.Nmesh, this.Nmesh, this.Nmesh))
+
+  preserve_mask2 = exist(index, index_from_next)
+  next.data = next.data[preserve_mask2]
+
   if next.DownSample > 1:
     # downsample levels need to carry on the interpolation
     # of previous level
@@ -156,16 +200,12 @@ def dig(this, next):
                     this.data['gps'], 
                     this.data['disp'], 
                    (next.Nmesh, next.Nmesh, next.Nmesh))
-  # index this level
-  index = numpy.ravel_multi_index(this.data['gps'].T, (this.Nmesh, this.Nmesh, this.Nmesh))
-  # locate those to be removed
-  ind = index_from_next.searchsorted(index)
-  covered_mask = (index_from_next.take(ind, mode='clip') == index)
 
-  assert covered_mask.sum() == len(index_from_next)
+  # locate those to be removed
+  covered_mask = exist(index_from_next, index)
   preserve_mask = ~covered_mask
   this.data = this.data[preserve_mask]
-
+  
 def activemask(level, align):
   sep = args.BoxSize / align
   regions = args.Regions

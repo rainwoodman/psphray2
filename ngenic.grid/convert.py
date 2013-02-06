@@ -10,10 +10,14 @@ def parseargs():
   parser = argparse.ArgumentParser(description="Assembling IC files from dumps")
   parser.add_argument("paramfile", 
                help="the same paramfile fed to ngenic.grid.")
-  parser.add_argument("format", choices=['gadget', 'ramses'], 
+  parser.add_argument("format", choices=['gadget', 'ramses', 'gadget-post'], 
                  help="Format of the output. \
                        gadget : to write a gadget IC, \
+                       gadget-post : to post-process a gadget IC(for piece-wise generation, \
                        ramses : to write a ramses IC, only the first zoom region is written due to ramses limitation")
+  parser.add_argument("--divide", type=int, help="divide into NxNxN pieces, for gadget IC generation. only 1 piece is generated at one time.", default=1)
+  parser.add_argument("--piece", nargs=3, type=int, help="divide into NxNxN pieces, for gadget IC generation. only 1 piece is generated at one time. piece= 0 ~ NxNxN - 1", default=(0, 0, 0))
+  parser.add_argument("--fid", type=int, help="first fid, for --divide and --piece. the total npar and nfile in those files need to be patched manually for now", default=0)
   parser.add_argument("-N", "--num-particles", 
                  help="Number of DM particles per file. \
                        For levels with Gas the total number in a file will be twice of this",
@@ -225,7 +229,6 @@ def readblock(Nmesh, block, dtype, args):
                 % Nmesh)
   if args.base:
     content = scale(Nmesh, content, args.base)
-
   return content
 
 def ramses(args):
@@ -276,6 +279,9 @@ def main(args):
   if args.format == 'gadget':
     from gadgetmodule import gadget
     gadget(args)
+  if args.format == 'gadget-post':
+    from gadgetmodule import gadgetpost
+    gadgetpost(args)
   elif args.format == 'ramses':
     ramses(args)
 
