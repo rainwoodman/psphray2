@@ -25,6 +25,8 @@ struct _ParNode {
     size_t primary_size; /* total number of primary particles, for split */
     size_t size; /* total number of particles, for mem/lookup */
     void * data; /* extra data associated with a node */
+    char first_nonempty_child;
+    char last_nonempty_child;
     int prefix; /* duplicated, this is also the position in up->link. avoid a linear search */
     int fill;
 };
@@ -40,7 +42,6 @@ struct _ParNode {
 typedef struct _ParNode Node;
 
 typedef struct {
-    int primarymask;  /* the mask of the primary ptype */
     int split_limit; /* when to split a node, this does not decide the final shape of the octtree */
     int merge_limit; /* when to merge all child nodes. this is the lower limit of # particles (unused) */
     int depth_limit; /* will never split the tree to deeper than this, shall usually be IPOS_NBITS */
@@ -60,18 +61,21 @@ inline int ipos_get_prefix(ipos_t ipos[3], int depth) {
       (((ipos[2] >> bit) & 1) << 2) 
         ;
 }
-inline int par_is_primary(PStore * pstore, Par * par) {
-    return ((1 << par->type) & pstore->primarymask) != 0;
+inline int par_is_primary(Par * par) {
+    extern unsigned int PRIMARY_MASK;
+    return (PRIMARY_MASK >> par->type) & 1;
 }
 
-int register_ptype(int id, char * name, size_t elesize);
-PStore * pstore_new(int primarymask);
+void register_ptype(int ptype, char * name, size_t elesize, int is_primary);
+PStore * pstore_new(size_t split_limit);
 
+void par_free(Par * par);
+void par_free_chain(Par * head);
 Par * pstore_insert(PStore * pstore, ipos_t ipos[3], int ptype);
 void pstore_remove(PStore * pstore, Par * par);
 Par * pstore_node_previous_par(Node * node);
 Par * pstore_node_next_par(Node * node);
-Par * pstore_get(PStore * pstore, ptrdiff_t index);
+Par * pstore_get_nearby(PStore * pstore, ptrdiff_t index);
 
 /**
  * packed particles,
