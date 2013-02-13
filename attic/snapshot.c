@@ -158,6 +158,20 @@ static void snapshot_prepare(SnapHeader * h, ptrdiff_t Nglobal[6]) {
     MPI_Bcast(Nglobal, 6, MPI_LONG, 0, ReaderComm);
 }
 
+static int start_block(char ** p) {
+    int rt;
+    rt = *(int*) *p;
+    *p += 4;
+    return rt;
+}
+static void check_block(char **p, int expected) {
+    int rt;
+    rt = *(int*) *p;
+    *p += 4;
+    if(expected != rt) {
+        g_error("block inconsistent");
+    }
+}
 static real_t read_real(char ** p, int double_precision) {
     real_t rt;
     if(double_precision) {
@@ -223,28 +237,29 @@ static PackedPar * snapshot_to_pack(int fid, ptrdiff_t Nread[6]) {
 
     p = buffer + 256 + 4 + 4; /* skip header */
     ptrdiff_t i = 0;
-    p += 4;
+    int check;
+    check = start_block(&p);
     for(i = 0; i < Ntot; i++) {
         Par * par = pstore_pack_get(temp, i);
         par->ipos[0] = read_real(&p, h.double_precision) / CB.BoxSize * IPOS_LIMIT;
         par->ipos[1] = read_real(&p, h.double_precision) / CB.BoxSize * IPOS_LIMIT;
         par->ipos[2] = read_real(&p, h.double_precision) / CB.BoxSize * IPOS_LIMIT;
     }
-    p += 4;
-    p += 4;
+    check_block(&p, check);
+    check = start_block(&p);
     for(i = 0; i < Ntot; i++) {
         Par * par = pstore_pack_get(temp, i);
         par->vel[0] = read_real(&p, h.double_precision);
         par->vel[1] = read_real(&p, h.double_precision);
         par->vel[2] = read_real(&p, h.double_precision);
     }
-    p += 4; 
-    p += 4;
+    check_block(&p, check);
+    check = start_block(&p);
     for(i = 0; i < Ntot; i++) {
         Par * par = pstore_pack_get(temp, i);
         par->id = read_id(&p, CB.IDByteSize == 8);
     }
-    p += 4;
+    check_block(&p, check);
 
     ptrdiff_t Nmass = 0;
     /* mass tab handling */
@@ -253,7 +268,7 @@ static PackedPar * snapshot_to_pack(int fid, ptrdiff_t Nread[6]) {
     }
 
     if(Nmass > 0) {
-        p += 4;
+        check = start_block(&p);
         for(i = 0; i < Ntot; i++) {
             Par * par = pstore_pack_get(temp, i);
             if(h.masstab[par->type] == 0) {
@@ -262,54 +277,54 @@ static PackedPar * snapshot_to_pack(int fid, ptrdiff_t Nread[6]) {
                 par->mass = h.masstab[par->type];
             }
         }
-        p += 4;
+        check_block(&p, check);
     }
     if(N[0] > 0) {
-        p += 4;
+        check = start_block(&p);
         for(i = 0; i < Ntot; i++) {
             Par * par = pstore_pack_get(temp, i);
             if(par->type != 0) continue;
             AS_GAS(par)->ie = read_real(&p, h.double_precision);
         }
-        p += 4;
-        p += 4;
+        check_block(&p, check);
+        check = start_block(&p);
         for(i = 0; i < Ntot; i++) {
             Par * par = pstore_pack_get(temp, i);
             if(par->type != 0) continue;
             AS_GAS(par)->rho = read_real(&p, h.double_precision);
         }
-        p += 4;
-        p += 4;
+        check_block(&p, check);
+        check = start_block(&p);
         for(i = 0; i < Ntot; i++) {
             Par * par = pstore_pack_get(temp, i);
             if(par->type != 0) continue;
             AS_GAS(par)->ye = read_real(&p, h.double_precision);
         }
-        p += 4;
-        p += 4;
+        check_block(&p, check);
+        check = start_block(&p);
         for(i = 0; i < Ntot; i++) {
             Par * par = pstore_pack_get(temp, i);
             if(par->type != 0) continue;
             AS_GAS(par)->xHI = read_real(&p, h.double_precision);
         }
-        p += 4;
-        p += 4;
+        check_block(&p, check);
+        check = start_block(&p);
         for(i = 0; i < Ntot; i++) {
             Par * par = pstore_pack_get(temp, i);
             if(par->type != 0) continue;
             AS_GAS(par)->sml = read_real(&p, h.double_precision);
         }
-        p += 4;
-        p += 4;
+        check_block(&p, check);
+        check = start_block(&p);
         for(i = 0; i < Ntot; i++) {
             Par * par = pstore_pack_get(temp, i);
             if(par->type != 0) continue;
             AS_GAS(par)->sfr = read_real(&p, h.double_precision);
         }
-        p += 4;
+        check_block(&p, check);
     }
     if(N[0] + N[4] > 0) {
-        p += 4;
+        check = start_block(&p);
         for(i = 0; i < Ntot; i++) {
             Par * par = pstore_pack_get(temp, i);
             if(par->type != 0) continue;
@@ -320,32 +335,32 @@ static PackedPar * snapshot_to_pack(int fid, ptrdiff_t Nread[6]) {
             if(par->type != 4) continue;
             AS_STAR(par)->met = read_real(&p, h.double_precision);
         }
-        p += 4;
+        check_block(&p, check);
     }
     if(N[4] > 0) {
-        p += 4;
+        check = start_block(&p);
         for(i = 0; i < Ntot; i++) {
             Par * par = pstore_pack_get(temp, i);
             if(par->type != 4) continue;
             AS_STAR(par)->sft = read_real(&p, h.double_precision);
         }
-        p += 4;
+        check_block(&p, check);
     }
     if(N[5] > 0) {
-        p += 4;
+        check = start_block(&p);
         for(i = 0; i < Ntot; i++) {
             Par * par = pstore_pack_get(temp, i);
             if(par->type != 5) continue;
             AS_BH(par)->bhmass = read_real(&p, h.double_precision);
         }
-        p += 4;
-        p += 4;
+        check_block(&p, check);
+        check = start_block(&p);
         for(i = 0; i < Ntot; i++) {
             Par * par = pstore_pack_get(temp, i);
             if(par->type != 5) continue;
             AS_BH(par)->bhmdot = read_real(&p, h.double_precision);
         }
-        p += 4;
+        check_block(&p, check);
     }
     g_mapped_file_unref(file);
     return temp;
@@ -428,11 +443,11 @@ PackedPar * snapshot_read(SnapHeader * h) {
             }
             PackedPar * packsend = pstore_pack_create_a(NULL, Nsend);
             ptrdiff_t iter = 0; 
-            ptrdiff_t j = 0; 
             for(ptype = 0; ptype < 6; ptype ++) {
                 Par * par;
+                ptrdiff_t j; 
                 /* push this many each type to the spawning pack */
-                for(par = head[ptype]; j < Nsend[ptype]; j++, par = par->next) {
+                for(par = head[ptype], j = 0; j < Nsend[ptype]; j++, par = par->next) {
                     pstore_pack_push(packsend, &iter, par);
                 }
                 /* and remove them from the active set */
@@ -473,6 +488,9 @@ PackedPar * snapshot_read(SnapHeader * h) {
             }
             receiverrank ++;
         } while(TRUE);
+    }
+    for(fid = fidstart; fid < fidend; fid++) {
+        g_assert(packread[fid] == NULL);
     }
     LEADERONLY {} else {
         MPI_Recv(pack, pstore_pack_total_bytes(pack), MPI_BYTE, 

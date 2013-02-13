@@ -465,9 +465,10 @@ PackedPar * pstore_pack_create_a(int *ptype, ptrdiff_t size[]) {
  * */
 void pstore_pack_push(PackedPar * pack, ptrdiff_t * cursor, Par * par) {
     ptrdiff_t * index = (ptrdiff_t *) (pack->data + pack->bytes);
-    index[0] = 0;
+    if(*cursor == 0) index[0] = 0;
     g_assert(*cursor < pack->size);
     g_assert(index[*cursor] < pack->bytes);
+    g_assert(index[*cursor] >= 0);
     size_t width = sizeof(Par) + PTYPE[par->type].elesize;
     void * ptr = pack->data + index[*cursor];
     memcpy(ptr, par, width);

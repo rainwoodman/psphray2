@@ -46,7 +46,15 @@ int main(int argc, char * argv[]) {
 
     SnapHeader header;
     PackedPar * pack = snapshot_read(&header);
-
+    ptrdiff_t i;
+    uint64_t idmin = 0xfffffff, idmax = 0;
+    for(i = 0; i < pack->size; i++) {
+        Par * par = pstore_pack_get(pack, i);
+        if(par->id > idmax) idmax = par->id;
+        if(par->id < idmin) idmin = par->id;
+    }
+    g_message("%03d: Ntot = %ld idmax = %ld, idmin = %ld",
+            ThisTask, pack->size, idmax, idmin);
     g_free(pack);
     g_mem_profile();
     //g_slice_debug_tree_statistics();
