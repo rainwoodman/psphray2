@@ -1,10 +1,13 @@
 include Makefile.local
 
-CFLAGS = -I. $(GLIB_INC) $(GSL_INC) $(FFTW_INC)
+CFLAGS = -I. -I../src $(GLIB_INC) $(GSL_INC) $(FFTW_INC)
 LDFLAGS =
 
 SOURCES = \
     main.c \
+    ../src/paramfile.c \
+    ../src/commonblock.c \
+    ../src/mpiu.c \
     par.c 
 
 HEADERS =

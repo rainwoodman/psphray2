@@ -61,6 +61,19 @@ inline int ipos_get_prefix(ipos_t ipos[3], int depth) {
       (((ipos[2] >> bit) & 1) << 2) 
         ;
 }
+inline int ipos_compare(ipos_t a[3], ipos_t b[3]) {
+    for(int depth = 0; depth < IPOS_NBITS; depth ++ ) {
+        int prefix_a = ipos_get_prefix(a, depth);
+        int prefix_b = ipos_get_prefix(b, depth);
+        if (prefix_a < prefix_b) {
+            return -1;
+        } 
+        if (prefix_a > prefix_b) {
+            return 1;
+        }
+    }
+    return 0;
+}
 inline int par_is_primary(Par * par) {
     extern unsigned int PRIMARY_MASK;
     return (PRIMARY_MASK >> par->type) & 1;
@@ -69,8 +82,10 @@ inline int par_is_primary(Par * par) {
 void register_ptype(int ptype, char * name, size_t elesize, int is_primary);
 PStore * pstore_new(size_t split_limit);
 
-void par_free(Par * par);
-void par_free_chain(Par * head);
+void pstore_free_node(Node * node);
+void pstore_free_node_r(Node * node);
+void pstore_free_par(Par * par);
+void pstore_free_par_chain(Par * head);
 Par * pstore_insert(PStore * pstore, ipos_t ipos[3], int ptype);
 void pstore_remove(PStore * pstore, Par * par);
 Par * pstore_node_previous_par(Node * node);
@@ -88,5 +103,9 @@ typedef struct {
     char data[];
 } PackedPar;
 
+PackedPar * pstore_pack_create_a(int * ptype, ptrdiff_t size[]);
 PackedPar * pstore_pack(Par * first, size_t size);
 Par * pstore_unpack(PackedPar * pack);
+void pstore_pack_push(PackedPar * pack, ptrdiff_t * cursor, Par * par);
+Par * pstore_pack_get(PackedPar * pack, ptrdiff_t cursor);
+void pstore_pack_sort(PackedPar * pack);

@@ -22,6 +22,7 @@ void register_ptype(int i, char * name, size_t elesize, int is_primary) {
 
 extern inline int ipos_get_prefix(ipos_t ipos[3], int depth);
 extern inline int par_is_primary(Par * par);
+extern inline int ipos_compare(ipos_t a[3], ipos_t b[3]);
 
 PStore * pstore_new(size_t split_limit) {
     PStore * store = g_new0(PStore, 1);
@@ -32,10 +33,23 @@ PStore * pstore_new(size_t split_limit) {
     return store;
 }
 
-void par_free(Par * par) {
+void pstore_free_node(Node * node) {
+    g_slice_free(Node, node);
+}
+void pstore_free_node_r(Node * node) {
+    int prefix;
+    if(node->link[0]) {
+        for(prefix = 0; prefix < 8; prefix ++) {
+            pstore_free_node_r(node->link[prefix]);
+        }
+    } else {
+        pstore_free_node(node);
+    }
+}
+void pstore_free_par(Par * par) {
     g_slice_free1(PTYPE[par->type].elesize + sizeof(Par), par);
 }
-void par_free_chain(Par * head) {
+void pstore_free_par_chain(Par * head) {
     Par * q = NULL;
     for(; head; head = q) {
         q = head->next;
@@ -52,35 +66,9 @@ Par * pstore_insert(PStore * pstore, ipos_t ipos[3], int ptype) {
     par->ipos[0] = ipos[0];
     par->ipos[1] = ipos[1];
     par->ipos[2] = ipos[2];
+    par->type = ptype;
     pstore_insert_r(pstore, pstore->root, par, 0);
     return par;
-}
-static int ipos_compare(ipos_t a[3], ipos_t b[3]) {
-    for(int depth = 0; depth < IPOS_NBITS; depth ++ ) {
-        int prefix_a = ipos_get_prefix(a, depth);
-        int prefix_b = ipos_get_prefix(b, depth);
-        if (prefix_a < prefix_b) {
-            return -1;
-        } 
-        if (prefix_a > prefix_b) {
-            return 1;
-        }
-    }
-    return 0;
-}
-static int child_is_first_nonempty(Node * node, int prefix) {
-    int i;
-    for(i = prefix - 1; i >= 0; i--) {
-        if(node->link[i]->size > 0) return 0;
-    }
-    return 1;
-}
-static int child_is_last_nonempty(Node * node, int prefix) {
-    int i;
-    for(i = prefix + 1; i < 8; i++) {
-        if(node->link[i]->size > 0) return 0;
-    }
-    return 1;
 }
 static void pstore_insert_r(PStore * pstore, Node * node, Par * par, int depth) {
     node->size ++;
@@ -182,17 +170,82 @@ static void pstore_insert_r(PStore * pstore, Node * node, Par * par, int depth) 
     }
 }
 
+/* this function is called when the size of child at prefix
+ * has shrunk.
+ * we first need to update first_nonempty_child and last_nonempty_child.
+ * if the node becomes empty, we also need to free up all children
+ * and make the node external.
+ * */
+static void pstore_child_shrunk(Node * node, int prefix) {
+    if(prefix == node->first_nonempty_child) {
+        int i = prefix;
+        while(i < 8 && node->link[i]->size == 0) {
+            i ++;
+        }
+        node->first_nonempty_child = i;
+        if(i < 8) node->first = node->link[i]->first;
+    }
+    if(prefix == node->last_nonempty_child) {
+        int i = prefix;
+        while(i >= 0 && node->link[i]->size == 0) {
+            i --;
+        }
+        node->last_nonempty_child = i;
+        if(i >= 0) node->last = node->link[i]->last;
+    }
+    if(node->last_nonempty_child == -1 ||
+       node->first_nonempty_child == 8 ||
+       node->size == 0
+    ) {
+        g_assert(node->last_nonempty_child == -1);
+        g_assert(node->first_nonempty_child == 8);
+        g_assert(node->size == 0);
+        /* this node is empty and shall no longer be internal */
+        int i;
+        for(i = 0; i < 8; i++) {
+            g_assert(node->link[i]->size == 0);
+            g_slice_free(Node, node->link[i]);
+            node->link[i] = NULL;
+        }
+        node->first = NULL;
+        node->last = NULL;
+    }
+}
 
+
+void pstore_remove_node(PStore * pstore, Node * node) {
+    Par * previous_par = pstore_node_previous_par(node);
+    Par * next_par = pstore_node_next_par(node);
+    if(previous_par) {
+        /* dequeue the entire node */
+        previous_par->next = next_par;
+    } 
+    if(node->last) {
+        node->last->next == NULL;
+    }
+    size_t size = node->size;
+    size_t primary_size = node->primary_size;
+    node->size = 0;
+    node->primary_size = 0;
+    Node * p;
+    for(p = node; p->up; p = p->up) {
+        p->up->size -= size;
+        p->up->primary_size -= primary_size;
+        pstore_child_shrunk(p->up, p->prefix);
+    }
+    node->size = size;
+    node->primary_size = primary_size;
+}
 /**
  * remove a particle by pointer ptr,
- * crash if par is not found
+ * crash if par is not found.
+ * par is not freed. free it with par_free
  * */
 static void pstore_remove_r(PStore * pstore, Node * node, Par * par, int depth);
 void pstore_remove(PStore * pstore, Par * par) {
     pstore_remove_r(pstore, pstore->root, par, 0);
     par->next = NULL;
 }
-
 static void pstore_remove_r(PStore * pstore, Node * node, Par * par, int depth) {
     if(node->link[0]) {
         /* inner */
@@ -200,41 +253,10 @@ static void pstore_remove_r(PStore * pstore, Node * node, Par * par, int depth) 
         g_assert(prefix >= node->first_nonempty_child);
         g_assert(prefix <= node->last_nonempty_child);
         pstore_remove_r(pstore, node->link[prefix], par, depth + 1);
-        if(prefix == node->first_nonempty_child) {
-            int i = prefix;
-            while(i < 8 && node->link[i]->size == 0) {
-                i ++;
-            }
-            node->first_nonempty_child = i;
-            if(i < 8) node->first = node->link[i]->first;
-        }
-        if(prefix == node->last_nonempty_child) {
-            int i = prefix;
-            while(i >= 0 && node->link[i]->size == 0) {
-                i --;
-            }
-            node->last_nonempty_child = i;
-            if(i >= 0) node->last = node->link[i]->last;
-        }
         node->size --;
         node->primary_size -= par_is_primary(par);
-        if(node->last_nonempty_child == -1 ||
-           node->first_nonempty_child == 8 ||
-           node->size == 0
-        ) {
-            g_assert(node->last_nonempty_child == -1);
-            g_assert(node->first_nonempty_child == 8);
-            g_assert(node->size == 0);
-            /* this node is empty and shall no longer be internal */
-            int i;
-            for(i = 0; i < 8; i++) {
-                g_assert(node->link[i]->size == 0);
-                g_slice_free(Node, node->link[i]);
-                node->link[i] = NULL;
-            }
-            node->first = NULL;
-            node->last = NULL;
-        }
+
+        pstore_child_shrunk(node, prefix);
     } else {
         /* external */
         Par * p = NULL;
@@ -374,60 +396,131 @@ static void pstore_merge_r(PStore * pstore, Node * node) {
  * 
  */
 PackedPar * pstore_pack(Par * first, size_t size) {
-    size_t bytes = 0;
-    Par * par;
     ptrdiff_t i = 0;
     ptrdiff_t N[256] = {0};
+    Par * par;
     for(par = first, i = 0; i < size; i++, par = par->next) {
         N[par->type] ++;
     }
-    for(i = 0; i < 256; i++) {
-        bytes += PTYPE[i].elesize * N[i];
-    }
-    bytes += size * sizeof(Par);
-    PackedPar * pack = g_malloc(sizeof(PackedPar) + bytes);
-    pack->bytes = bytes;
-    pack->size = size;
+
+    PackedPar * pack = pstore_pack_create_a(NULL, N);
     char * ptr = pack->data;
+    ptrdiff_t * index = (ptrdiff_t * )(pack->data + pack->bytes);
     for(par = first, i = 0; i < size; i++, par = par->next) {
         size_t width = sizeof(Par) + PTYPE[par->type].elesize;
         memcpy(ptr, par, width);
+        index[i] = ptr - pack->data;
         ptr += width;
     }
     return pack;
 }
 
 /**
+ * allocate a pack. 
+ * if ptype is not NULL, then ptype is a list of ptype, terminated by -1.
+ * if ptype is NULL, assume it starts from 0 upto when size[i] == -1
+ */
+PackedPar * pstore_pack_create_a(int *ptype, ptrdiff_t size[]) {
+    size_t bytes = 0;
+    ptrdiff_t i = 0;
+    ptrdiff_t N[256] = {0};
+    ptrdiff_t Nsum = 0;
+    if(ptype != NULL) {
+        for(i = 0; ptype[i] >=0; i++) {
+            N[ptype[i]] = size[i];
+        }
+    } else {
+        /* assume size is sequential for ptype 0 ~ N */
+        for(i = 0; i < 256 && size[i] >=0; i++) {
+            N[i] = size[i];
+        }
+    }
+    for(i = 0; i < 256; i++) {
+        bytes += (PTYPE[i].elesize + sizeof(Par)) * N[i];
+        Nsum += N[i];
+    }
+    PackedPar * pack = g_malloc(sizeof(PackedPar) + bytes + sizeof(ptrdiff_t) * Nsum);
+    pack->bytes = bytes;
+    pack->size = Nsum;
+    return pack;
+}
+/* push a par to pack. iter needs to be 0 when function is first called.
+ *
+ * the pack has to be preallocated with pstore_pack_create_a.
+ *
+ * total number of calls of pstore_pack_push on different particle types
+ * must agree with how pstore_pack_create_a was called. some sanity checks
+ * are done but this is not thoroughly checked.
+ *
+ * first call *cursor shall be zero.
+ * */
+void pstore_pack_push(PackedPar * pack, ptrdiff_t * cursor, Par * par) {
+    ptrdiff_t * index = (ptrdiff_t *) (pack->data + pack->bytes);
+    index[0] = 0;
+    g_assert(*iter < pack->size);
+    g_assert(index[*iter] < pack->bytes);
+    size_t width = sizeof(Par) + PTYPE[par->type].elesize;
+    void * ptr = pack->data + index[*iter];
+    memcpy(ptr, par, width);
+    if(*iter < pack->size - 1) {
+        index[*iter + 1] = index[*iter] + width;
+    }
+    *iter ++;
+}
+/**
  * unpack packed par to a GSList kind of structure.
  *
  * this is done in place. do not free any elements. free the entire pack
  * with one g_free, or the free of whatever corresponding allocator
+ * that allocated the pack.
  * */
 
 Par * pstore_unpack(PackedPar * pack) {
     ptrdiff_t i;
     char * ptr = pack->data;
-    Par * par = (Par * ) ptr;
-    for(i = 0; i < pack->size; i++) {
-        size_t width = sizeof(Par) + PTYPE[par->type].elesize;
-        ptr += width;
-        par->next = (Par *) ptr;
-        par = par->next;
+    ptrdiff_t * index = (ptrdiff_t *) (pack->data + pack->bytes);
+    for(i = 0; i < pack->size - 1; i++) {
+        Par * par = (Par* ) (pack->data + index[i]);
+        par->next = (Par* ) (pack->data + index[i + 1]);
     }
     /* remember to set the last next pointer to NULL, it used to point
      * to outside of the data buffer */
+    Par * par = (Par *) (pack->data + index[i]);
     par->next = NULL;
     /* return the first par */
-    return (Par *) pack->data;
+    return (Par *) (pack->data + index[0]);
+}
+
+Par * pstore_pack_get(PackedPar * pack, ptrdiff_t cursor) {
+    ptrdiff_t * index = (ptrdiff_t *) (pack->data + pack->bytes);
+    return (Par *) (pack->data + index[cursor]);
+}
+
+/*
+ * sort particle in a pack by their positions, almost in place.
+ * */
+static int pstore_pack_sort_compare_func(ptrdiff_t * a, ptrdiff_t * b, PackedPar * pack) {
+    char * ptr = pack->data;
+    return ipos_compare(((Par *)(ptr + *a))->ipos, ((Par *)(ptr + *b))->ipos);
+}
+
+void pstore_pack_sort(PackedPar * pack) {
+    char * ptr = pack->data;
+    ptrdiff_t * index = (ptrdiff_t * ) (pack->data + pack->bytes);
+    g_qsort_with_data(index, pack->size, sizeof(ptrdiff_t), (GCompareDataFunc) pstore_pack_sort_compare_func, pack);
 }
 
 static void pstore_check_r(PStore * pstore, Node * node, int depth, ipos_t x, ipos_t y, ipos_t z);
 void pstore_check(PStore * pstore) {
     pstore_check_r(pstore, pstore->root, 0, 0, 0, 0);
 }
+
 static void pstore_check_r(PStore * pstore, Node * node, int depth, ipos_t x, ipos_t y, ipos_t z) {
     ipos_t width = 1 << (IPOS_NBITS - depth);
     ipos_t m = 1 << (IPOS_NBITS - depth - 1);
+    if(node->last) {
+        g_assert(node->last->next == pstore_node_next_par(node));
+    }
     if(node->link[0]) {
         int prefix;
         for(prefix = 0; prefix < 8; prefix++) {
@@ -454,7 +547,7 @@ static void pstore_check_r(PStore * pstore, Node * node, int depth, ipos_t x, ip
         for(prefix = 0; prefix < 8; prefix++) {
             g_assert(node->link[prefix] == NULL);
         }
-        g_assert(node->size <= pstore->split_limit);
+        g_assert(node->primary_size <= pstore->split_limit);
         Par * par = node->first;
         int i;
         if(node->size > 0) {
@@ -483,5 +576,4 @@ static void pstore_check_r(PStore * pstore, Node * node, int depth, ipos_t x, ip
         }
         g_assert(pc == node->primary_size);
     }
-    
 }
