@@ -1,10 +1,12 @@
 #include <glib.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include "mpiu.h"
 #include "commonblock.h"
 #include "par.h"
+#include "hydro.h"
+#include "snapshot.h"
+
 static char ** paramfilename = NULL;
 static GOptionEntry entries[] =
 {
@@ -13,38 +15,10 @@ static GOptionEntry entries[] =
   { NULL }
 };
 
-#if 0
-void abort() {
-    MPI_Abort(MPI_COMM_WORLD, 1);
-    /* shut up the compiler */
-    exit(1);
-}
-#endif
-void print_handler(const gchar * string) {
-    fputs(string, stdout);
-    fflush(stdout);
-}
-
-static void log_handler
-    (const gchar *log_domain,
-    GLogLevelFlags log_level,
-    const gchar *message,
-    gpointer unused_data) {
-
-    g_log_default_handler(log_domain, log_level, message, unused_data);
-    if((log_level & G_LOG_FLAG_FATAL) && NTask > 1) {
-        g_on_error_stack_trace ("");
-        abort();
-    }
-}
-
 int main(int argc, char * argv[]) {
     MPI_Init(&argc, &argv);
-
-    g_mem_set_vtable(glib_mem_profiler_table);
-    g_log_set_default_handler(log_handler, NULL);
-    g_set_print_handler(print_handler);
-    mpiu_init();
+//    g_mem_set_vtable(glib_mem_profiler_table);
+    mpiu_module_init();
 
     ROOTONLY {
         GError * error = NULL;
@@ -68,9 +42,19 @@ int main(int argc, char * argv[]) {
     common_block_sync();
     MPI_Barrier(MPI_COMM_WORLD);
 
-    register_ptype(0, "DM", 0, TRUE);
-    register_ptype(1, "GAS", 24, FALSE);
+    hydro_module_init();
 
+    SnapHeader header;
+    PackedPar * pack = snapshot_read(&header);
+
+    g_free(pack);
+    g_mem_profile();
+    //g_slice_debug_tree_statistics();
+    MPI_Finalize();
+    return 0;
+}
+
+void test() {
     PStore * pstore = pstore_new(4);
     int i;
     g_random_set_seed(0);
@@ -122,7 +106,7 @@ int main(int argc, char * argv[]) {
     p = pstore->root->first;
     g_message("total length = %d", g_slist_length(p));
     g_message(PAR_FMT, PAR_PRINT(p[0])); 
-    //g_mem_profile();
-    //g_slice_debug_tree_statistics();
-    return 0;
+
+
 }
+

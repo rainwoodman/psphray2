@@ -7,16 +7,17 @@ static struct {
     char name[8];
     size_t elesize;
 } PTYPE[256];
-
-unsigned int PRIMARY_MASK = 0;
+unsigned int PAR_PTYPE_MASK = 0;
+unsigned int PAR_PRIMARY_MASK = 0;
 /* register a ptype. elesize is the size of extra storage, which 
  * can be accessed via Par.data */
 void register_ptype(int i, char * name, size_t elesize, int is_primary) {
     strncpy(PTYPE[i].name, name, 8);
     PTYPE[i].name[7] = 0;
     PTYPE[i].elesize = elesize;
+    PAR_PTYPE_MASK |= (1 << i);
     if(is_primary) {
-        PRIMARY_MASK |= (1L << i);
+        PAR_PRIMARY_MASK |= (1L << i);
     }
 }
 
@@ -46,6 +47,12 @@ void pstore_free_node_r(Node * node) {
         pstore_free_node(node);
     }
 }
+Par * pstore_alloc_par(int ptype) {
+    Par * par = g_slice_alloc(PTYPE[ptype].elesize + sizeof(Par));
+    par->type = ptype;
+    return par;
+}
+
 void pstore_free_par(Par * par) {
     g_slice_free1(PTYPE[par->type].elesize + sizeof(Par), par);
 }
@@ -444,6 +451,7 @@ PackedPar * pstore_pack_create_a(int *ptype, ptrdiff_t size[]) {
     pack->size = Nsum;
     return pack;
 }
+
 /* push a par to pack. iter needs to be 0 when function is first called.
  *
  * the pack has to be preallocated with pstore_pack_create_a.
@@ -453,19 +461,20 @@ PackedPar * pstore_pack_create_a(int *ptype, ptrdiff_t size[]) {
  * are done but this is not thoroughly checked.
  *
  * first call *cursor shall be zero.
+ *
  * */
 void pstore_pack_push(PackedPar * pack, ptrdiff_t * cursor, Par * par) {
     ptrdiff_t * index = (ptrdiff_t *) (pack->data + pack->bytes);
     index[0] = 0;
-    g_assert(*iter < pack->size);
-    g_assert(index[*iter] < pack->bytes);
+    g_assert(*cursor < pack->size);
+    g_assert(index[*cursor] < pack->bytes);
     size_t width = sizeof(Par) + PTYPE[par->type].elesize;
-    void * ptr = pack->data + index[*iter];
+    void * ptr = pack->data + index[*cursor];
     memcpy(ptr, par, width);
-    if(*iter < pack->size - 1) {
-        index[*iter + 1] = index[*iter] + width;
+    if(*cursor < pack->size - 1) {
+        index[*cursor + 1] = index[*cursor] + width;
     }
-    *iter ++;
+    *cursor = *cursor + 1;
 }
 /**
  * unpack packed par to a GSList kind of structure.
@@ -473,6 +482,10 @@ void pstore_pack_push(PackedPar * pack, ptrdiff_t * cursor, Par * par) {
  * this is done in place. do not free any elements. free the entire pack
  * with one g_free, or the free of whatever corresponding allocator
  * that allocated the pack.
+ *
+ * Notice that with pstore_pack_get, we can already 
+ * randomly access a pack.
+ *
  * */
 
 Par * pstore_unpack(PackedPar * pack) {
@@ -493,6 +506,8 @@ Par * pstore_unpack(PackedPar * pack) {
 
 Par * pstore_pack_get(PackedPar * pack, ptrdiff_t cursor) {
     ptrdiff_t * index = (ptrdiff_t *) (pack->data + pack->bytes);
+    g_assert(cursor >= 0 && cursor < pack->size);
+    g_assert(index[cursor] >= 0 && index[cursor] < pack->bytes);
     return (Par *) (pack->data + index[cursor]);
 }
 

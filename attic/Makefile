@@ -7,7 +7,8 @@ SOURCES = \
     main.c \
     ../src/paramfile.c \
     ../src/commonblock.c \
-    ../src/mpiu.c \
+	snapshot.c \
+    mpiu.c \
     par.c 
 
 HEADERS =

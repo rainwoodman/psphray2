@@ -1,6 +1,10 @@
+#ifndef __PAR_H__
+#define __PAR_H__
 #include <stdint.h>
 
 typedef int32_t ipos_t;
+typedef float real_t;
+
 #define IPOS_NBITS 20
 #define IPOS_LIMIT (1L << IPOS_NBITS)
 #define IPOS_BAD (-1l)
@@ -11,10 +15,12 @@ typedef struct _Par {
         gpointer space;
     };
     struct _Par * next;
+    /* do not modify above. for GSList compatibility. */
     ipos_t ipos[3];
+    real_t vel[3];
     uint64_t id;
-    float mass;
-    char data[];
+    real_t mass;
+    char prop[];
 } Par;
 
 struct _ParNode {
@@ -75,8 +81,8 @@ inline int ipos_compare(ipos_t a[3], ipos_t b[3]) {
     return 0;
 }
 inline int par_is_primary(Par * par) {
-    extern unsigned int PRIMARY_MASK;
-    return (PRIMARY_MASK >> par->type) & 1;
+    extern unsigned int PAR_PRIMARY_MASK;
+    return (PAR_PRIMARY_MASK >> par->type) & 1;
 }
 
 void register_ptype(int ptype, char * name, size_t elesize, int is_primary);
@@ -84,6 +90,7 @@ PStore * pstore_new(size_t split_limit);
 
 void pstore_free_node(Node * node);
 void pstore_free_node_r(Node * node);
+Par * pstore_alloc_par(int ptype);
 void pstore_free_par(Par * par);
 void pstore_free_par_chain(Par * head);
 Par * pstore_insert(PStore * pstore, ipos_t ipos[3], int ptype);
@@ -98,14 +105,19 @@ Par * pstore_get_nearby(PStore * pstore, ptrdiff_t index);
  * ready for MPI send/recv.
  * */
 typedef struct {
-    size_t size;   /* size of data in number of particles */
-    size_t bytes;  /* size of data in bytes */
+    size_t size;   /* total number of particles */
+    size_t bytes;  /* size of data in bytes, excluding the tailing index */
     char data[];
 } PackedPar;
 
 PackedPar * pstore_pack_create_a(int * ptype, ptrdiff_t size[]);
 PackedPar * pstore_pack(Par * first, size_t size);
+inline size_t pstore_pack_total_bytes(PackedPar * pack) {
+    return pack->bytes + sizeof(PackedPar) + sizeof(ptrdiff_t) * pack->size;
+}
 Par * pstore_unpack(PackedPar * pack);
 void pstore_pack_push(PackedPar * pack, ptrdiff_t * cursor, Par * par);
 Par * pstore_pack_get(PackedPar * pack, ptrdiff_t cursor);
 void pstore_pack_sort(PackedPar * pack);
+
+#endif
