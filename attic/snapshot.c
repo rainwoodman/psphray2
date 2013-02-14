@@ -323,6 +323,15 @@ static PackedPar * snapshot_to_pack(int fid, ptrdiff_t Nread[6]) {
         }
         check_block(&p, check);
     }
+    if(N[4] > 0) {
+        check = start_block(&p);
+        for(i = 0; i < Ntot; i++) {
+            Par * par = pstore_pack_get(temp, i);
+            if(par->type != 4) continue;
+            AS_STAR(par)->sft = read_real(&p, h.double_precision);
+        }
+        check_block(&p, check);
+    }
     if(N[0] + N[4] > 0) {
         check = start_block(&p);
         for(i = 0; i < Ntot; i++) {
@@ -334,15 +343,6 @@ static PackedPar * snapshot_to_pack(int fid, ptrdiff_t Nread[6]) {
             Par * par = pstore_pack_get(temp, i);
             if(par->type != 4) continue;
             AS_STAR(par)->met = read_real(&p, h.double_precision);
-        }
-        check_block(&p, check);
-    }
-    if(N[4] > 0) {
-        check = start_block(&p);
-        for(i = 0; i < Ntot; i++) {
-            Par * par = pstore_pack_get(temp, i);
-            if(par->type != 4) continue;
-            AS_STAR(par)->sft = read_real(&p, h.double_precision);
         }
         check_block(&p, check);
     }
@@ -366,7 +366,6 @@ static PackedPar * snapshot_to_pack(int fid, ptrdiff_t Nread[6]) {
     return temp;
 }
 PackedPar * snapshot_read(SnapHeader * h) {
-
 
     ptrdiff_t Nlocal[7];
     ptrdiff_t Nsend[7];
@@ -395,15 +394,16 @@ PackedPar * snapshot_read(SnapHeader * h) {
 
     PackedPar * pack = pstore_pack_create_a(NULL, Nlocal); /* return value */
 
+    ptrdiff_t cursor[6] = {0};
+    int receiverrank = 0;
     LEADERONLY for(fid = fidstart; fid < fidend; fid ++) { 
         int ptype;
-        ptrdiff_t cursor[6] = {0};
-        int receiverrank = 0;
         int i;
         /* first read snapshot into a pack */
         packread[fid] = snapshot_to_pack(fid, Nremain[fid]);
 
         stale[fid] = 0;
+        /* the initial staleness if the file contains no particles of given type*/
         for(ptype = 0; ptype < 6; ptype ++) {
             if(Nremain[fid][ptype] == 0) stale[fid]++;
         }
@@ -439,6 +439,11 @@ PackedPar * snapshot_read(SnapHeader * h) {
             }
             /* not yet !*/
             if(rippen != 6) {
+                g_debug("rippen = %d", rippen);
+                g_debug("cursor = %ld %ld %ld %ld %ld %ld",
+                    cursor[0], cursor[1], cursor[2], cursor[3], cursor[4], cursor[5]);
+                g_debug("Nsend = %ld %ld %ld %ld %ld %ld",
+                    Nsend[0], Nsend[1], Nsend[2], Nsend[3], Nsend[4], Nsend[5]);
                 break;
             }
             PackedPar * packsend = pstore_pack_create_a(NULL, Nsend);
@@ -473,7 +478,7 @@ PackedPar * snapshot_read(SnapHeader * h) {
                     Nremain[fid2][ptype] = size;
                     /* if any particle type is nolonger in use, then
                      * staleness goes up. when staleness goes to 6 then it's done */
-                    if(stale[fid2] == 6) {
+                    if(stale[fid2] == 6 && packread[fid2]) {
                         g_free(packread[fid2]);  
                         packread[fid2] = NULL;
                     }
@@ -483,18 +488,26 @@ PackedPar * snapshot_read(SnapHeader * h) {
             if(receiverrank == 0) {
                 pack = packsend;
             } else {
+                g_debug("a pack is rippen and sent to %d", receiverrank);
                 MPI_Send(packsend, pstore_pack_total_bytes(packsend), MPI_BYTE, receiverrank, receiverrank, ReaderComm);
                 g_free(packsend);
             }
             receiverrank ++;
         } while(TRUE);
     }
-    for(fid = fidstart; fid < fidend; fid++) {
-        g_assert(packread[fid] == NULL);
+    LEADERONLY {
+        /* assert that temporary buffers for reading are freed. */
+        for(fid = fidstart; fid < fidend; fid++) {
+            if(packread[fid] != NULL) {
+                g_error("%d is not freed, stale=%d", fid, stale[fid]);
+                /* there is a bug in the code if this happens. */
+            }
+        }
     }
     LEADERONLY {} else {
         MPI_Recv(pack, pstore_pack_total_bytes(pack), MPI_BYTE, 
                     0, ReaderRank, ReaderComm, MPI_STATUS_IGNORE);
+        g_debug("%03d received the particle pack", ThisTask);
     }
     return pack;
 }

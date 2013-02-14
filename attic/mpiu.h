@@ -1,6 +1,7 @@
 #ifndef __MPIU_H__
 #define __MPIU_H__
 #include <mpi.h>
+
 extern int ThisTask;
 extern int NTask;
 extern int PrevTask;
