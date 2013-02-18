@@ -4,11 +4,14 @@
 datadir = datadir
 
 [IC]
-Seed = 181170  # Volker's seed number. 
+# Volker's seed number. 
+Seed = 181170  
 BoxSize = 250
-a = 0.00625             # The scaling factor (1 / (z + 1)) of the IC.
+# The scaling factor (1 / (z + 1)) of the IC.
+a = 0.00625             
 
-WhichSpectrum=1   # EH spectrum
+# EH spectrum
+WhichSpectrum=1   
 Sigma8 = 0.8           
 PrimordialIndex=0.96
 ShapeGamma=0.2
@@ -18,7 +21,8 @@ ShapeGamma=0.2
 # if DMptype has g, (eg, 1g, or 2g), gas will be made.
 # if there is a DownSampleFactor, boxsize/DownSampleFactor and Nmesh/DownSampleFactor
 # will be used for that level, and the DS box will be repeated to fill the entire box
-Level1 = 16, 0, 3           # The level with scale factor 0 is the base level (coarsest)
+# The level with scale factor 0 is the base level (coarsest)
+Level1 = 16, 0, 3           
 Level2 = 32, 2.0, 2
 Level3 = 64, 1.0, 1g, 2
 
@@ -33,9 +37,12 @@ OmegaB=0.044
 OmegaM=0.26
 OmegaL=0.74
 
-H=0.1        # Hubble in internal Units, this goes hand by hand with Unit
-G=43007.1    # Gravity constant in internal Units,
-C=300000     # Speed of light in internal Units. shall use the 299xxx number.
+# Hubble in internal Units, this goes hand by hand with Unit
+H=0.1        
+# Gravity constant in internal Units,
+G=43007.1    
+# Speed of light in internal Units. shall use the 299xxx number.
+C=300000     
 
 [Unit]
 # This set up the GADGEt internal units of kpc/h, 0.98 Gyr/h, 1e10 Msun/h,
