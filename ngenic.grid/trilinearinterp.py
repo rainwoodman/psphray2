@@ -68,7 +68,7 @@ def main():
   ys = 1.0 * numpy.mod(xs[:, 0], 10)
 
   x = [[i, 0, i] for i  in numpy.linspace(0, 20, 41)]
-  y = interp(x, xs, ys, dims)
+  y = trilinearinterp(x, xs, ys, dims)
 
   print zip(x, y)
 
