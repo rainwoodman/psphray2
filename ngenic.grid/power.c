@@ -31,7 +31,6 @@ static double TopHatSigma2(double R);
 double PowerSpec(double k)
 {
   double power, alpha, Tf;
-
   switch (CB.IC.WhichSpectrum)
     {
     case 1:
@@ -84,6 +83,7 @@ void init_power(void)
 }
 
 
+#if 0
 static double tk_eh(double k)		/* from Martin White */
 {
   static int inited = 0;
@@ -114,7 +114,37 @@ static double tk_eh(double k)		/* from Martin White */
   const double C0 = 14.2 + 731. / (1. + 62.5 * q);
   return L0 / (L0 + C0 * q * q);
 }
+#else
+static double tk_eh(double k)		/* from Martin White */
+{
+  double q, theta, ommh2, a, s, gamma, L0, C0;
+  double tmp;
+  double omegam, ombh2, hubble;
 
+  /* other input parameters */
+  hubble = CB.C.h;
+
+  omegam = CB.C.OmegaM;
+  ombh2 = CB.C.OmegaB * hubble * hubble;
+
+  k *= (1000 * CB.U.KPC_h);
+
+  theta = 2.728 / 2.7;
+  ommh2 = omegam * hubble * hubble;
+  s = 44.5 * log(9.83 / ommh2) / sqrt(1. + 10. * exp(0.75 * log(ombh2))) * hubble;
+  a = 1. - 0.328 * log(431. * ommh2) * ombh2 / ommh2
+    + 0.380 * log(22.3 * ommh2) * (ombh2 / ommh2) * (ombh2 / ommh2);
+  gamma = a + (1. - a) / (1. + exp(4 * log(0.43 * k * s)));
+  gamma *= omegam * hubble;
+  q = k * theta * theta / gamma;
+  L0 = log(2. * exp(1.) + 1.8 * q);
+  C0 = 14.2 + 731. / (1. + 62.5 * q);
+  tmp = L0 / (L0 + C0 * q * q);
+  return (tmp);
+}
+
+
+#endif
 static double PowerSpec_Tabulated(double k)
 {
   double logk, logD, P, kold, u, dlogk, Delta2;
@@ -164,6 +194,7 @@ static double PowerSpec_Efstathiou(double k)
 static double PowerSpec_EH(double k)	/* Eisenstein & Hu */
 {
   return Norm * k * pow(tk_eh(k), 2);
+    
 }
 
 

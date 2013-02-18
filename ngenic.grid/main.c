@@ -14,6 +14,7 @@ extern void init_filter(void);
 extern void disp(int ax);
 extern void filter(int ax, char* fname, int i);
 
+extern double PowerSpec(double);
 void abort() {
     MPI_Abort(MPI_COMM_WORLD, 1);
     /* shut up the compiler */
@@ -59,6 +60,7 @@ static void SECTION_COSMOLOGY(GKeyFile * keyfile) {
 static void SECTION_IC(GKeyFile * keyfile) {
     _integer(keyfile, "IC", "Seed", &CB.IC.Seed);
     dinteger(keyfile, "IC", "WhichSpectrum", &CB.IC.WhichSpectrum, 1); /*1 for EH, 3 for Etsu, 2 is from file and broken*/
+    dinteger(keyfile, "IC", "SphereMode", &CB.IC.SphereMode, 1); 
     _double(keyfile, "IC", "BoxSize", &CB.BoxSize);
     _double(keyfile, "IC", "a", &CB.a);
     _double(keyfile, "IC", "Sigma8", &CB.C.Sigma8);
@@ -226,6 +228,14 @@ int main(int argc, char * argv[]) {
             dump_filter(fname);
             free(fname);
         }
+        char * fname = g_strdup_printf("%s/power-%d.txt", CB.datadir, CB.IC.Nmesh);
+        double K0 = 2 * G_PI / CB.BoxSize;
+        FILE * fp = fopen(fname, "w");
+        for(int i = 0; i < CB.IC.Nmesh; i++) {
+            fprintf(fp, "%g %g\n", i * K0, PowerSpec(i * K0));
+        }
+        fclose(fp);
+        free(fname);
     }
 
     char * blocks[] = {"region", "index", "dispx", "dispy", "dispz", "delta"};

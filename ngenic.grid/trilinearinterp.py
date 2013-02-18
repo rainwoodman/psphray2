@@ -23,6 +23,7 @@ def trilinearinterp(x, xs, ys, dims, mode='wrap', out=None):
       shape = len(x)
     
     out = numpy.empty(shape, dtype)
+  if len(x) == 0: return out
   vec = numpy.array([
                [0, 0, 0],
                [0, 0, 1],

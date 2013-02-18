@@ -44,6 +44,7 @@ typedef struct {
         int Nmesh;
         int NmeshBefore;
         int DownSample;
+        int SphereMode;
         int WhichSpectrum;
         double PrimordialIndex;
         double ShapeGamma;

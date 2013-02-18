@@ -4,6 +4,8 @@
 #include "commonblock.h"
 #include <math.h>
 #include <stdio.h>
+
+extern double GrowthFactor(double, double);
 /* from disp.c */
 extern double * Disp;
 extern intptr_t Local_nx;
@@ -193,6 +195,7 @@ void dump_filter(char * fname) {
     vel_prefac /= sqrt(CB.a);   /* converts to Gadget velocity */
     fprintf(fp, "vfact = %g\n", vel_prefac);
     fprintf(fp, "NRegion = %d\n", CB.IC.NRegions);
+    fprintf(fp, "Dplus = %g\n", GrowthFactor(CB.a, 1.0));
     for(int r = 0; r < CB.IC.NRegions; r++) {
         fprintf(fp, "Offset[%d] = [%d, %d, %d]\n", r, 
             IBottom[r][0], 

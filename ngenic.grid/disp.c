@@ -19,7 +19,6 @@ static size_t localsize;
 static uint32_t * seedtable;
 static int Nmesh, Nsample, DownSample, NmeshBefore;
 static double BoxSize;
-static int SphereMode;
 static double Dplus;
 /* from powerspec.c */
 extern double PowerSpec(double);
@@ -33,7 +32,6 @@ void init_disp() {
     DownSample = CB.IC.DownSample;
     Nsample = CB.IC.Nmesh / CB.IC.DownSample;
     BoxSize = CB.BoxSize; 
-    SphereMode = 1;
 
     Dplus = GrowthFactor(CB.a, 1.0);
 
@@ -212,7 +210,7 @@ void fill_PK(int ax) {
                  * the density fluctuation won't be exactly the same;
                  * there is no need to pay this price.
                  * */
-                if(SphereMode == 1) {
+                if(CB.IC.SphereMode == 1) {
                     if(kmag > Kthresh ||
                     (DownSample > 1 && kmag <= KthreshBefore)) 
                         continue;
