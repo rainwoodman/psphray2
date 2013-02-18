@@ -20,6 +20,9 @@ static int __ ## name (GKeyFile * keyfile, char * group, char * key, type * valu
         return FALSE; \
     } \
     value[0] = g_key_file_get_ ## name(keyfile, group, key, &error); \
+    if(error) { \
+        g_error("error %s\n", error->message); \
+    } \
     return TRUE; \
 } \
 static int d ## name (GKeyFile * keyfile, char * group, char * key, type * value, type def) { \
