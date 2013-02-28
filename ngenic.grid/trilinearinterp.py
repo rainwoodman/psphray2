@@ -1,4 +1,5 @@
 import numpy
+from zoom import zoom
 
 def trilinearinterp(x, xs, ys, dims, mode='wrap', out=None):
   """ interpolate x from grid points (xs, ys),
@@ -61,7 +62,26 @@ def trilinearinterp(x, xs, ys, dims, mode='wrap', out=None):
     loop(x[i:i+65536], out[i:i+65536])
 
   return out
+def upscaleby2(src):
+  return zoom(src, 2, order=5, mode='wrap')
+  newshape = [ s * 2 for s in src.shape]
+  x = numpy.array(numpy.unravel_index(range(len(src.flat) * 8),
+       newshape)).T
+  xs = numpy.array(numpy.unravel_index(range(len(src.flat)),
+       src.shape)).T
 
+  return trilinearinterp(x * 0.5, xs, src.ravel(), dims=src.shape, mode='wrap').reshape(newshape)
+
+def power(delta, K0, Dplus):
+  delta_k = numpy.fft.rfftn(delta) / numpy.prod(numpy.float64(delta.shape))
+  i, j, k = numpy.unravel_index(range(len(delta_k.flat)), delta_k.shape)
+  i = delta_k.shape[0] // 2 - numpy.abs(delta_k.shape[0] // 2 - i)
+  j = delta_k.shape[1] // 2 - numpy.abs(delta_k.shape[1] // 2 - j)
+  k = (i ** 2 + j ** 2 + k ** 2) ** 0.5
+  dig = numpy.digitize(k, numpy.arange(int(k.max())))
+  kpk = k.reshape(delta_k.shape) * (numpy.abs(delta_k) ** 2) * K0 ** -3 * Dplus ** 2
+  return numpy.arange(dig.max()+1) * K0, numpy.bincount(dig, weights=kpk.ravel()) / numpy.bincount(dig, weights=k.ravel())
+  
 def main():  
   dims = (10, 10, 10)
   xs = numpy.array(numpy.unravel_index(numpy.arange(10 ** 3), dims)).T

@@ -10,6 +10,8 @@ void common_block_sync() {
     ROOTONLY {
     } else {
         CB.IC.R = g_new0(region_t, CB.IC.NRegions);
+        CB.IC.Levels = g_new0(level_t, CB.IC.NLevels);
     }
     MPI_Bcast(CB.IC.R, sizeof(region_t) * CB.IC.NRegions, MPI_BYTE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(CB.IC.Levels, sizeof(level_t) * CB.IC.NLevels, MPI_BYTE, 0, MPI_COMM_WORLD);
 }

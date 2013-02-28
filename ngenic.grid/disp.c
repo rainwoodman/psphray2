@@ -32,7 +32,6 @@ void init_disp() {
     DownSample = CB.IC.DownSample;
     Nsample = CB.IC.Nmesh / CB.IC.DownSample;
     BoxSize = CB.BoxSize; 
-
     Dplus = GrowthFactor(CB.a, 1.0);
 
     fftw_mpi_init();
@@ -100,17 +99,32 @@ void fill_PK(int ax) {
     int dsi, dsii, dsj, dsjj, dsk, dskk;
     int kmod;
     /* What this does 
+     * CFT = dx * iDFT (thus CFT has no 2pi factors and iCFT has, 
+     *           same as wikipedia.)
+     * iCFT(CFT) = (2pi) ** 3, thus iCFT also has no 2pi factors.
+     * this is the same as the non-unitary transformation on wikipedia
      *
-     * delta = K0 **  3/2 * (DownSampling ** 1.5) * FFT ( delta_k * S(k)) * 
-     *       = K0 ** -3/2 * CFT ( delta_k * S(k))
-     * where S is the selection function.
+     * deltak = CFT(delta) = L**3 / N**3 iDFT(delta)
+     * delta = L**-3 * DFT(deltak)
+     * or,
+     * delta = iCFT(deltak) * (2pi)**-3 = L**-3 DFT(deltak)
      *
-     * Without downsampling S selects all frequency
-     * in the sphere or in the box.
+     * Pk = CFT(xi) = deltak ** 2 * L ** -3
+     * 
+     * deltak = sqrt(Pk) * L ** 1.5
      *
-     * With downsampling S selects all frequency
-     * that are not previously covered. The delta of
-     * lower frequency is added by convert.py
+     * delta = L **-1.5 DFT(sqrt(Pk * (2pi) **-3)) * (2pi) * 1.5
+     *       = DFT(sqrt(Pk * (2pi) **-3) * (2pi /L) ** 1.5)
+     *
+     * observed:
+     * delta = iDFT(sqrt(Pk * 2pi**-3) * (2pi/L) ** 1.5)
+     * 
+     * NOTE: PowerSpec is actually (Pk * 2pi ** -3).
+     * DFT and iDFT differs by flipping sign of k. because input
+     * is random this will just make it another realization.
+     *
+     * When DownSampling is enabled, effectively L is smaller.
+     *
      * */
     double K0 = 2 * G_PI / BoxSize;
     double Kthresh = K0 * Nmesh / 2;
@@ -119,8 +133,8 @@ void fill_PK(int ax) {
     /* DownSample ** 3 corrects for FFT<->CFT */
     double fac = pow(K0, 1.5) * pow(DownSample, 1.5) / Dplus; 
 
-   double * ktable = g_new0(double, Nmesh);
-   double * k2table = g_new0(double, Nmesh);
+    double * ktable = g_new0(double, Nmesh);
+    double * k2table = g_new0(double, Nmesh);
     for(i = 0; i < Nmesh; i ++) {
         if(i < Nmesh / 2) ktable[i] = i * K0;
         else ktable[i] = -(Nmesh - i) * K0;
@@ -212,20 +226,21 @@ void fill_PK(int ax) {
                  * */
                 if(CB.IC.SphereMode == 1) {
                     if(kmag > Kthresh ||
-                    (DownSample > 1 && kmag <= KthreshBefore)) 
+                            (DownSample > 1 && kmag <= KthreshBefore)) 
                         continue;
                 } else {
                     if(ktable[i] > Kthresh ||
-                       (DownSample > 1 && ktable[i] <= KthreshBefore))
+                            (DownSample > 1 && ktable[i] <= KthreshBefore))
                         continue;
                     if(ktable[j] > Kthresh ||
-                       (DownSample > 1 && ktable[i] <= KthreshBefore))
+                            (DownSample > 1 && ktable[i] <= KthreshBefore))
                         continue;
                     if(ktable[k] > Kthresh ||
-                       (DownSample > 1 && ktable[i] <= KthreshBefore))
+                            (DownSample > 1 && ktable[i] <= KthreshBefore))
                         continue;
                 }
 
+                /* PowerSpec is normalized to sigma8 ** 2 / (8 * pi**3) */
                 double p_of_k = PowerSpec(kmag) * -log(ampl);
                 double delta = fac * sqrt(p_of_k);
                 double re, im;

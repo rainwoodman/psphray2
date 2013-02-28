@@ -4,6 +4,13 @@ typedef struct {
 } region_t;
 
 typedef struct {
+    int Nmesh;
+    double Scale;
+    int DownSample;
+    int use_longrangecut;
+    int use_shortrangecut;
+} level_t;
+typedef struct {
     double a;
 
     double BoxSize; /* filled by snapshot.c, not by paramfile.c, yet */
@@ -14,6 +21,7 @@ typedef struct {
     struct {
         int VERBOSE;
         int INDEX;
+        int POWERONLY;
     } F;
     struct {
         double MYEAR_h;
@@ -43,7 +51,10 @@ typedef struct {
         int Seed;
         int Nmesh;
         int NmeshBefore;
+        int NmeshAfter;
         int DownSample;
+        int DownSampleBefore;
+        int DownSampleAfter;
         int SphereMode;
         int WhichSpectrum;
         double PrimordialIndex;
@@ -51,6 +62,8 @@ typedef struct {
         double Scale;
         int NRegions;
         region_t * R;
+        level_t * Levels;
+        int NLevels;
     } IC;
 } CommonBlock;
 

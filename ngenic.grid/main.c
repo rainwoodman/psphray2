@@ -31,6 +31,7 @@ static GOptionEntry entries[] =
 {
   { "verbose", 'v', 0, G_OPTION_ARG_NONE, &CB.F.VERBOSE, "Be verbose", NULL },
   { "index", 'I', 0, G_OPTION_ARG_NONE, &CB.F.INDEX, "write the region map, but do not do the FFT, the default is to write delta and disp.", NULL },
+  { "power", 'p', 0, G_OPTION_ARG_NONE, &CB.F.POWERONLY, "just write out the power spectrum", NULL },
   { G_OPTION_REMAINING, 0, 0, G_OPTION_ARG_STRING_ARRAY, &args, "", NULL },
   { NULL }
 };
@@ -85,6 +86,9 @@ static void SECTION_UNIT(GKeyFile * keyfile) {
     CB.U.SOLARMASS = CB.U.GRAM * 1.989e43;
     CB.U.PROTONMASS = CB.U.GRAM * 1.6726e-24;
 }
+static int cmp_level_t_nmesh(level_t * l1, level_t *  l2) {
+    return (l1->Nmesh > l2->Nmesh) - (l2->Nmesh > l1->Nmesh);
+}
 static void paramfile_read(char * filename) {
     GKeyFile * keyfile = g_key_file_new();
     GError * error = NULL;
@@ -133,6 +137,9 @@ static void paramfile_read(char * filename) {
         g_error("empty regions list:%s", error->message);
     }
     CB.IC.Scale = -1;
+    CB.IC.NmeshAfter = INT_MAX;
+    CB.IC.NLevels = g_strv_length(keys);
+    CB.IC.Levels = g_new0(level_t, CB.IC.NLevels);
     for(int i = 0; keys[i]; i++) {
         char * args = g_key_file_get_string(keyfile, "Levels", keys[i], &error);
         char ** sp = g_strsplit_set(args, ";,", -1);
@@ -141,6 +148,16 @@ static void paramfile_read(char * filename) {
             g_error("a level must have 2+ entries, Nmesh scaling factor, and optionally dm ptype");
         }
         int Nmesh = atoi(sp[0]);
+        CB.IC.Levels[i].Nmesh = Nmesh;
+        CB.IC.Levels[i].Scale = atof(sp[1]);
+        CB.IC.Levels[i].use_longrangecut = 0;
+        CB.IC.Levels[i].use_shortrangecut = 0;
+        if(length == 4) {
+            CB.IC.Levels[i].DownSample = atoi(sp[3]);
+        } else {
+            CB.IC.Levels[i].DownSample = 1;
+        }
+
         if(Nmesh == CB.IC.Nmesh) {
             CB.IC.Scale = atof(sp[1]);
             if(length == 4) {
@@ -148,14 +165,37 @@ static void paramfile_read(char * filename) {
             } else {
                 CB.IC.DownSample = 1;
             }
-            break;
         } else {
             if(Nmesh < CB.IC.Nmesh && Nmesh > CB.IC.NmeshBefore) {
                 CB.IC.NmeshBefore = Nmesh;
+                if(length == 4) {
+                    CB.IC.DownSampleBefore = atoi(sp[3]);
+                } else {
+                    CB.IC.DownSampleBefore = 1;
+                }
+            }
+            if(Nmesh > CB.IC.Nmesh && Nmesh < CB.IC.NmeshAfter) {
+                CB.IC.NmeshAfter = Nmesh;
+                if(length == 4) {
+                    CB.IC.DownSampleAfter = atoi(sp[3]);
+                } else {
+                    CB.IC.DownSampleAfter = 1;
+                }
             }
         }
         g_strfreev(sp);
         g_free(args);
+    }
+    qsort(CB.IC.Levels, CB.IC.NLevels, sizeof(level_t), cmp_level_t_nmesh);
+    for(int i = 0; i < CB.IC.NLevels - 1; i++) {
+        if(CB.IC.Levels[i+1].DownSample > 1) {
+            CB.IC.Levels[i].use_shortrangecut = 1;
+        }
+    }
+    for(int i = 1; i < CB.IC.NLevels; i++) {
+        if(CB.IC.Levels[i - 1].use_shortrangecut) {
+           CB.IC.Levels[i].use_longrangecut = 1;
+        }
     }
     if(CB.IC.Scale == -1) {
         g_error("Nmesh (%d) does not present in paramfile ", CB.IC.Nmesh);
@@ -219,6 +259,20 @@ int main(int argc, char * argv[]) {
     }
     common_block_sync();
     init_power();
+    ROOTONLY {
+        char * fname = g_strdup_printf("%s/power-%d.txt", CB.datadir, CB.IC.Nmesh);
+        double K0 = 2 * G_PI / CB.BoxSize;
+        FILE * fp = fopen(fname, "w");
+        for(int i = 0; i < CB.IC.Nmesh; i++) {
+            fprintf(fp, "%g %g\n", i * K0, PowerSpec(i * K0));
+        }
+        fclose(fp);
+        free(fname);
+    }
+    if(CB.F.POWERONLY) {
+        MPI_Finalize();
+        return 0;
+    }
     init_disp();
     init_filter();
 
@@ -228,14 +282,6 @@ int main(int argc, char * argv[]) {
             dump_filter(fname);
             free(fname);
         }
-        char * fname = g_strdup_printf("%s/power-%d.txt", CB.datadir, CB.IC.Nmesh);
-        double K0 = 2 * G_PI / CB.BoxSize;
-        FILE * fp = fopen(fname, "w");
-        for(int i = 0; i < CB.IC.Nmesh; i++) {
-            fprintf(fp, "%g %g\n", i * K0, PowerSpec(i * K0));
-        }
-        fclose(fp);
-        free(fname);
     }
 
     char * blocks[] = {"region", "index", "dispx", "dispy", "dispz", "delta"};
