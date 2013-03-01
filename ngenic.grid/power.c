@@ -222,7 +222,7 @@ static double qrombwrapper(double x, double (*func)(double x)) {
 static double qromb(double (*func)(double x), double a, double b) {
     gsl_integration_workspace * workspace = gsl_integration_workspace_alloc(1000);
     gsl_function F;
-    F.function = qrombwrapper;
+    F.function = (double (*)(double, void *))qrombwrapper;
     F.params = (void*) func;
     double result;
     double error;

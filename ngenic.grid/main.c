@@ -5,15 +5,19 @@
 #include <signal.h>
 #include <execinfo.h>
 #include "mpiu.h"
+#include <string.h>
 #include "paramfile.inc"
 #include "commonblock.h"
-
+#include <math.h>
 extern void init_power(void);
 extern void init_disp(void);
+extern void free_disp(void);
 extern void init_filter(void);
 extern void disp(int ax);
 extern void filter(int ax, char* fname, int i);
+extern double F_Omega(double a);
 
+extern double GrowthFactor(double, double);
 extern double PowerSpec(double);
 void abort() {
     MPI_Abort(MPI_COMM_WORLD, 1);
@@ -26,7 +30,6 @@ void print_handler(const gchar * string) {
 }
 
 static char ** args = NULL;
-
 static GOptionEntry entries[] =
 {
   { "verbose", 'v', 0, G_OPTION_ARG_NONE, &CB.F.VERBOSE, "Be verbose", NULL },
@@ -86,9 +89,6 @@ static void SECTION_UNIT(GKeyFile * keyfile) {
     CB.U.SOLARMASS = CB.U.GRAM * 1.989e43;
     CB.U.PROTONMASS = CB.U.GRAM * 1.6726e-24;
 }
-static int cmp_level_t_nmesh(level_t * l1, level_t *  l2) {
-    return (l1->Nmesh > l2->Nmesh) - (l2->Nmesh > l1->Nmesh);
-}
 static void paramfile_read(char * filename) {
     GKeyFile * keyfile = g_key_file_new();
     GError * error = NULL;
@@ -106,8 +106,8 @@ static void paramfile_read(char * filename) {
     if(keys == NULL) {
         g_error("empty regions list:%s", error->message);
     }
-    CB.IC.NRegions = nkeys;
-    CB.IC.R = g_new0(region_t, nkeys);
+    g_assert(nkeys == 1);
+    regions_alloc(nkeys);
 
     for(int i = 0; keys[i]; i++) {
         char * arg = g_key_file_get_string(keyfile, "Regions", keys[i], &error);
@@ -120,26 +120,24 @@ static void paramfile_read(char * filename) {
             g_error("region must be provided with 4 or 6 numbers: x;y;z; sx[;sy;sz]");
         }
         for(int d = 0; d < 3; d++) {
-            CB.IC.R[i].center[d] = atof(sp[d]);
-            CB.IC.R[i].size[d] = atof(sp[length == 6 ? d + 3 : 3]);
+            R[i].center[d] = atof(sp[d]);
+            R[i].size[d] = atof(sp[length == 6 ? d + 3 : 3]);
         }
         g_strfreev(sp);
         g_free(arg);
         g_message("using region %d: center (%g %g %g) size (%g %g %g)", i,
-                CB.IC.R[i].center[0], CB.IC.R[i].center[1], CB.IC.R[i].center[2], 
-                CB.IC.R[i].size[0], CB.IC.R[i].size[1], CB.IC.R[i].size[2]);
-
+                R[i].center[0], R[i].center[1], R[i].center[2], 
+                R[i].size[0], R[i].size[1], R[i].size[2]);
     }
-    g_strfreev(keys);
 
+    g_strfreev(keys);
     keys = g_key_file_get_keys(keyfile, "Levels", &nkeys, &error);
     if(keys == NULL) {
         g_error("empty regions list:%s", error->message);
     }
-    CB.IC.Scale = -1;
-    CB.IC.NmeshAfter = INT_MAX;
-    CB.IC.NLevels = g_strv_length(keys);
-    CB.IC.Levels = g_new0(level_t, CB.IC.NLevels);
+
+    levels_alloc(g_strv_length(keys));
+
     for(int i = 0; keys[i]; i++) {
         char * args = g_key_file_get_string(keyfile, "Levels", keys[i], &error);
         char ** sp = g_strsplit_set(args, ";,", -1);
@@ -148,62 +146,26 @@ static void paramfile_read(char * filename) {
             g_error("a level must have 2+ entries, Nmesh scaling factor, and optionally dm ptype");
         }
         int Nmesh = atoi(sp[0]);
-        CB.IC.Levels[i].Nmesh = Nmesh;
-        CB.IC.Levels[i].Scale = atof(sp[1]);
-        CB.IC.Levels[i].use_longrangecut = 0;
-        CB.IC.Levels[i].use_shortrangecut = 0;
+        L[i].Nmesh = Nmesh;
+        L[i].Scale = atof(sp[1]);
         if(length == 4) {
-            CB.IC.Levels[i].DownSample = atoi(sp[3]);
+            L[i].DownSample = atoi(sp[3]);
         } else {
-            CB.IC.Levels[i].DownSample = 1;
+            L[i].DownSample = 1;
         }
 
-        if(Nmesh == CB.IC.Nmesh) {
-            CB.IC.Scale = atof(sp[1]);
-            if(length == 4) {
-                CB.IC.DownSample = atoi(sp[3]);
-            } else {
-                CB.IC.DownSample = 1;
-            }
-        } else {
-            if(Nmesh < CB.IC.Nmesh && Nmesh > CB.IC.NmeshBefore) {
-                CB.IC.NmeshBefore = Nmesh;
-                if(length == 4) {
-                    CB.IC.DownSampleBefore = atoi(sp[3]);
-                } else {
-                    CB.IC.DownSampleBefore = 1;
-                }
-            }
-            if(Nmesh > CB.IC.Nmesh && Nmesh < CB.IC.NmeshAfter) {
-                CB.IC.NmeshAfter = Nmesh;
-                if(length == 4) {
-                    CB.IC.DownSampleAfter = atoi(sp[3]);
-                } else {
-                    CB.IC.DownSampleAfter = 1;
-                }
-            }
-        }
         g_strfreev(sp);
         g_free(args);
     }
-    qsort(CB.IC.Levels, CB.IC.NLevels, sizeof(level_t), cmp_level_t_nmesh);
-    for(int i = 0; i < CB.IC.NLevels - 1; i++) {
-        if(CB.IC.Levels[i+1].DownSample > 1) {
-            CB.IC.Levels[i].use_shortrangecut = 1;
-        }
-    }
-    for(int i = 1; i < CB.IC.NLevels; i++) {
-        if(CB.IC.Levels[i - 1].use_shortrangecut) {
-           CB.IC.Levels[i].use_longrangecut = 1;
-        }
-    }
-    if(CB.IC.Scale == -1) {
-        g_error("Nmesh (%d) does not present in paramfile ", CB.IC.Nmesh);
-    }
-    if(CB.IC.Scale == 0.0 && CB.F.INDEX) {
+
+    levels_sort();
+
+    CB.IC.Level = levels_select(CB.IC.Nmesh);
+
+    if(CB.IC.Level == 0 && CB.F.INDEX) {
         g_error("no index to be made for the base level mesh (whose Scale == 0.0)");
     }
-    g_message("using scale %g", CB.IC.Scale);
+    g_message("using scale %g", L[CB.IC.Level].Scale);
     g_strfreev(keys);
 
     char * data = g_key_file_to_data(keyfile, NULL, NULL);
@@ -224,6 +186,36 @@ static int decwidth(int n) {
     g_free(tmp);
     return width;
 }
+
+static void write_header(char * fname) {
+    int DownSample = L[CB.IC.Level].DownSample;
+    int Nmesh = CB.IC.Nmesh;
+    FILE * fp = fopen(fname, "w");
+    fprintf(fp, "NTask = %d\n", NTask);
+    fprintf(fp, "DownSample = %d\n", DownSample);
+    fclose(fp);
+    g_free(fname);
+    double hubble_a = CB.C.H * sqrt(CB.C.OmegaM / pow(CB.a, 3) + 
+        (1 - CB.C.OmegaM - CB.C.OmegaL) / pow(CB.a, 2) + CB.C.OmegaL);
+    double vel_prefac = CB.a * hubble_a * F_Omega(CB.a);
+    vel_prefac /= sqrt(CB.a);   /* converts to Gadget velocity */
+    fprintf(fp, "vfact = %g\n", vel_prefac);
+    fprintf(fp, "NRegion = %d\n", NR);
+    fprintf(fp, "Dplus = %g\n", GrowthFactor(CB.a, 1.0));
+    for(int r = 0; r < NR; r++) {
+        fprintf(fp, "Offset[%d] = [%d, %d, %d]\n", r, 
+            R[r].ibottom[0], 
+            R[r].ibottom[1], 
+            R[r].ibottom[2]
+        );
+        fprintf(fp, "Size[%d] = [%d, %d, %d]\n", r, 
+            R[r].isize[0], 
+            R[r].isize[1], 
+            R[r].isize[2]
+        );
+    }
+}
+
 int main(int argc, char * argv[]) {
 
     MPI_Init(&argc, &argv);
@@ -276,14 +268,6 @@ int main(int argc, char * argv[]) {
     init_disp();
     init_filter();
 
-    ROOTONLY {
-        if(!CB.F.INDEX) {
-            char * fname = g_strdup_printf("%s/meta-%d", CB.datadir, CB.IC.Nmesh);
-            dump_filter(fname);
-            free(fname);
-        }
-    }
-
     char * blocks[] = {"region", "index", "dispx", "dispy", "dispz", "delta"};
     int axstart, axend;
     if(CB.F.INDEX) {
@@ -293,32 +277,32 @@ int main(int argc, char * argv[]) {
         axstart = 0;
         axend = 4;
     }
+    int DownSample = L[CB.IC.Level].DownSample;
+    int Nmesh = CB.IC.Nmesh;
     int width = decwidth(NTask);
-    int dswidth = decwidth(CB.IC.DownSample);
+    int dswidth = decwidth(DownSample);
 
     for(int ax = axstart; ax < axend; ax ++) {
         /* -2 is the region mask and -1 is the index map, they do not need the displacment field */
-        char * fname = NULL;
         if(ax >= 0) disp(ax);
-        for(int i = 0; i < CB.IC.DownSample; i++) {
+        for(int i = 0; i < DownSample; i++) {
             ROOTONLY {
-                fname = g_strdup_printf("%s/%s-%d.header", CB.datadir, blocks[ax + 2], CB.IC.Nmesh);
-                FILE * fp = fopen(fname, "w");
-                fprintf(fp, "NTask = %d\n", NTask);
-                fprintf(fp, "DownSample = %d\n", CB.IC.DownSample);
-                fclose(fp);
-                g_free(fname);
+                char * fname = g_strdup_printf("%s/%s-%d.header", CB.datadir, blocks[ax + 2], Nmesh);
+                write_header(fname);
+                free(fname);
             }
-            if(CB.IC.DownSample == 1) {
-                fname = g_strdup_printf("%s/%s-%d.%0*d", CB.datadir, blocks[ax + 2], CB.IC.Nmesh, width, ThisTask);
+            char * fname;
+            if(DownSample == 1) {
+                fname = g_strdup_printf("%s/%s-%d.%0*d", CB.datadir, blocks[ax + 2], Nmesh, width, ThisTask);
             } else {
-                fname = g_strdup_printf("%s/%s-%d.%0*d-%0*d", CB.datadir, blocks[ax + 2], CB.IC.Nmesh, dswidth, i, width, ThisTask);
+                fname = g_strdup_printf("%s/%s-%d.%0*d-%0*d", CB.datadir, blocks[ax + 2], Nmesh, dswidth, i, width, ThisTask);
             }
             filter(ax, fname, i);
+            g_free(fname);
         }
-        g_free(fname);
         MPI_Barrier(MPI_COMM_WORLD);
     }
     free_disp();
     MPI_Finalize();
 }
+

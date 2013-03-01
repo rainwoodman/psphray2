@@ -5,7 +5,6 @@
 #include <math.h>
 #include <stdio.h>
 
-extern double GrowthFactor(double, double);
 /* from disp.c */
 extern double * Disp;
 extern intptr_t Local_nx;
@@ -13,15 +12,10 @@ extern intptr_t Local_x_start;
 
 #define PR(i, j, k) Disp[(((i) - Local_x_start) * Nsample + (j)) * (2 * (Nsample / 2 + 1)) + (k)]
 static double R0;
-static int (*IBottom)[3];
-static int (*ITop)[3];
-static int (*ISize)[3];
-static intptr_t (*Stride)[3];
 static int Nmesh;
 static int Nsample;
 static int DownSample;
 static int Base;
-double F_Omega(double a);
 
 typedef struct {
     int region;
@@ -46,12 +40,12 @@ int sweep(cross_t * dest, int pos, int d, cross_t * src, int length) {
     int newlength = 0;
     for(int i = 0; i < length; i++) {
         int r = src[i].region;
-        int dx = pos - IBottom[r][d];
+        int dx = pos - R[r].ibottom[d];
         while(dx < 0) dx += Nmesh;
         while(dx >= Nmesh) dx -= Nmesh;
-        if(dx >= ISize[r][d]) continue;
+        if(dx >= R[r].isize[d]) continue;
         dest[newlength] = src[i];
-        dest[newlength].index += Stride[r][d] * dx;
+        dest[newlength].index += R[r].stride[d] * dx;
         newlength++;
     }
     return newlength;
@@ -60,31 +54,30 @@ int sweep(cross_t * dest, int pos, int d, cross_t * src, int length) {
 
 void init_filter() {
     Nmesh = CB.IC.Nmesh;
-    DownSample = CB.IC.DownSample;
+    DownSample = L[CB.IC.Level].DownSample;
     Nsample = Nmesh / DownSample;
+    double Scale;
+    Scale = L[CB.IC.Level].Scale;
     R0 = CB.BoxSize / Nmesh;
-    Base = CB.IC.Scale == 0.0;
-    IBottom = (int (*) [3])g_new0(int, 3 * CB.IC.NRegions);
-    ITop = (int (*) [3]) g_new0(int, 3 * CB.IC.NRegions);
-    ISize = (int (*) [3]) g_new0(int, 3 * CB.IC.NRegions);
-    Stride = (intptr_t (*) [3]) g_new0(intptr_t, 3 * CB.IC.NRegions);
-    for(int r = 0; r < CB.IC.NRegions; r++) {
+    Base = Scale == 0.0;
+    for(int r = 0; r < NR; r++) {
         for(int d = 0; d < 3; d++) {
             /* make sure the center is in the box.*/
-            double c = remainder(CB.IC.R[r].center[d], CB.BoxSize);
+            double c = remainder(R[r].center[d], CB.BoxSize);
             while(c < 0) c += CB.BoxSize;
-            IBottom[r][d] = floor((c - CB.IC.R[r].size[d] * 0.5 * CB.IC.Scale) / R0) - 1;
-            ITop[r][d] = ceil((c + CB.IC.R[r].size[d] * 0.5 * CB.IC.Scale) / R0)+ 1;
-            ISize[r][d] = ITop[r][d] - IBottom[r][d];
+            R[r].ibottom[d] = floor((c - R[r].size[d] * 0.5 * Scale) / R0) - 1;
+            R[r].itop[d] = ceil((c + R[r].size[d] * 0.5 * Scale) / R0)+ 1;
+            R[r].isize[d] = R[r].itop[d] - R[r].ibottom[d];
         }
-        Stride[r][0] = ISize[r][1] * ISize[r][2];
-        Stride[r][1] = ISize[r][2];
-        Stride[r][2] = 1;
+        R[r].stride[0] = R[r].isize[1] * R[r].isize[2];
+        R[r].stride[1] = R[r].isize[2];
+        R[r].stride[2] = 1;
         ROOTONLY g_message("Region %d, %dx%dx%d", r, 
-                ISize[r][0],
-                ISize[r][1],
-                ISize[r][2]);
+                R[r].isize[0],
+                R[r].isize[1],
+                R[r].isize[2]);
     }
+
 }
 
 intptr_t filter0(int i, int j, int k, int r) {
@@ -92,26 +85,26 @@ intptr_t filter0(int i, int j, int k, int r) {
     int inside = 0;
     int irelpos[3];
     for(int d = 0; d < 3; d++) {
-        int dx = ipos[d] - IBottom[r][d];
+        int dx = ipos[d] - R[r].ibottom[d];
         while (dx < 0) dx += Nmesh;
         while (dx >= Nmesh) dx -= Nmesh;
-        if(dx >= ISize[r][d]) return -1;
+        if(dx >= R[r].isize[d]) return -1;
         irelpos[d] = dx;
     }
-    return (((intptr_t)irelpos[0] * ISize[r][1]) + irelpos[1]) * ISize[r][2] + irelpos[2];
+    return (((intptr_t)irelpos[0] * R[r].isize[1]) + irelpos[1]) * R[r].isize[2] + irelpos[2];
 }
 
 void filter(int ax, char * fname, int xDownSample) {
     FILE * fp = NULL;
-    cross_t * cross0 = g_new0(cross_t, CB.IC.NRegions);
-    cross_t * crossx = g_new0(cross_t, CB.IC.NRegions);
-    cross_t * crossy = g_new0(cross_t, CB.IC.NRegions);
-    cross_t * crossz = g_new0(cross_t, CB.IC.NRegions);
+    cross_t * cross0 = g_new0(cross_t, NR);
+    cross_t * crossx = g_new0(cross_t, NR);
+    cross_t * crossy = g_new0(cross_t, NR);
+    cross_t * crossz = g_new0(cross_t, NR);
     /*copy all regions */
     int crossx_length;
     int crossy_length;
     int crossz_length;
-    for(int icr = 0; icr < CB.IC.NRegions; icr++) {
+    for(int icr = 0; icr < NR; icr++) {
         cross0[icr].region = icr;
         cross0[icr].index = 0;
     }
@@ -127,7 +120,7 @@ void filter(int ax, char * fname, int xDownSample) {
         i = dsi + xDownSample * Nsample;
         if(dsi < Local_x_start) continue;
         if(dsi >= Local_x_start + Local_nx) continue;
-        crossx_length = sweep(crossx, i, 0, cross0, CB.IC.NRegions);
+        crossx_length = sweep(crossx, i, 0, cross0, NR);
         if(!crossx_length) continue;
         for(j = 0; j < Nmesh; j ++) {
             crossy_length = sweep(crossy, j, 1, crossx, crossx_length);
@@ -187,26 +180,3 @@ void filter(int ax, char * fname, int xDownSample) {
     ROOTONLY g_message("done filtering ax %d", ax);
 }
 
-void dump_filter(char * fname) {
-    FILE * fp = fopen(fname, "w");
-    double hubble_a = CB.C.H * sqrt(CB.C.OmegaM / pow(CB.a, 3) + 
-            (1 - CB.C.OmegaM - CB.C.OmegaL) / pow(CB.a, 2) + CB.C.OmegaL);
-    double vel_prefac = CB.a * hubble_a * F_Omega(CB.a);
-    vel_prefac /= sqrt(CB.a);   /* converts to Gadget velocity */
-    fprintf(fp, "vfact = %g\n", vel_prefac);
-    fprintf(fp, "NRegion = %d\n", CB.IC.NRegions);
-    fprintf(fp, "Dplus = %g\n", GrowthFactor(CB.a, 1.0));
-    for(int r = 0; r < CB.IC.NRegions; r++) {
-        fprintf(fp, "Offset[%d] = [%d, %d, %d]\n", r, 
-            IBottom[r][0], 
-            IBottom[r][1], 
-            IBottom[r][2]
-        );
-        fprintf(fp, "Size[%d] = [%d, %d, %d]\n", r, 
-            ISize[r][0], 
-            ISize[r][1], 
-            ISize[r][2]
-        );
-    }
-    fclose(fp);
-}

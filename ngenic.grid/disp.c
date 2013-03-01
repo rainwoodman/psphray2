@@ -28,9 +28,9 @@ extern double GrowthFactor(double, double);
 
 void init_disp() {
     Nmesh = CB.IC.Nmesh;
-    NmeshBefore = CB.IC.NmeshBefore;
-    DownSample = CB.IC.DownSample;
-    Nsample = CB.IC.Nmesh / CB.IC.DownSample;
+    NmeshBefore = CB.IC.Level>0?L[CB.IC.Level-1].Nmesh:0;
+    DownSample = L[CB.IC.Level].DownSample;
+    Nsample = Nmesh / DownSample;
     BoxSize = CB.BoxSize; 
     Dplus = GrowthFactor(CB.a, 1.0);
 

@@ -1,15 +1,18 @@
 typedef struct {
     double center[3];
     double size[3];
+    int ibottom[3];
+    int itop[3];
+    int isize[3];
+    ptrdiff_t stride[3];
 } region_t;
 
 typedef struct {
     int Nmesh;
     double Scale;
     int DownSample;
-    int use_longrangecut;
-    int use_shortrangecut;
 } level_t;
+
 typedef struct {
     double a;
 
@@ -49,24 +52,23 @@ typedef struct {
     } C;
     struct {
         int Seed;
+        int Level;
         int Nmesh;
-        int NmeshBefore;
-        int NmeshAfter;
-        int DownSample;
-        int DownSampleBefore;
-        int DownSampleAfter;
         int SphereMode;
         int WhichSpectrum;
         double PrimordialIndex;
         double ShapeGamma;
-        double Scale;
-        int NRegions;
-        region_t * R;
-        level_t * Levels;
-        int NLevels;
     } IC;
 } CommonBlock;
 
 extern CommonBlock CB;
 void common_block_sync();
 
+extern int NR;
+extern int NL;
+extern region_t * R;
+extern level_t * L;
+void levels_sort();
+void levels_alloc(size_t n);
+void regions_alloc(size_t n);
+int levels_select(int Nmesh);
