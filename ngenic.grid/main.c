@@ -193,8 +193,6 @@ static void write_header(char * fname) {
     FILE * fp = fopen(fname, "w");
     fprintf(fp, "NTask = %d\n", NTask);
     fprintf(fp, "DownSample = %d\n", DownSample);
-    fclose(fp);
-    g_free(fname);
     double hubble_a = CB.C.H * sqrt(CB.C.OmegaM / pow(CB.a, 3) + 
         (1 - CB.C.OmegaM - CB.C.OmegaL) / pow(CB.a, 2) + CB.C.OmegaL);
     double vel_prefac = CB.a * hubble_a * F_Omega(CB.a);
@@ -214,6 +212,7 @@ static void write_header(char * fname) {
             R[r].isize[2]
         );
     }
+    fclose(fp);
 }
 
 int main(int argc, char * argv[]) {
