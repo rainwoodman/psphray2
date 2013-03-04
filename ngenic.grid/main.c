@@ -33,7 +33,7 @@ static char ** args = NULL;
 static GOptionEntry entries[] =
 {
   { "verbose", 'v', 0, G_OPTION_ARG_NONE, &CB.F.VERBOSE, "Be verbose", NULL },
-  { "index", 'I', 0, G_OPTION_ARG_NONE, &CB.F.INDEX, "write the region map, but do not do the FFT, the default is to write delta and disp.", NULL },
+  { "index", 'I', 0, G_OPTION_ARG_NONE, &CB.F.INDEX, "write the region map, but do not do the FFT, the default is to write index and delta and disp.", NULL },
   { "power", 'p', 0, G_OPTION_ARG_NONE, &CB.F.POWERONLY, "just write out the power spectrum", NULL },
   { G_OPTION_REMAINING, 0, 0, G_OPTION_ARG_STRING_ARRAY, &args, "", NULL },
   { NULL }
@@ -273,7 +273,7 @@ int main(int argc, char * argv[]) {
         axstart = -2;
         axend = 0;
     } else {
-        axstart = 0;
+        axstart = -2;
         axend = 4;
     }
     int DownSample = L[CB.IC.Level].DownSample;
