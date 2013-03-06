@@ -30,10 +30,10 @@ def interpolate(h, hnext):
     ipos = chunk['ipos']
     ipos = 1.0 * ipos * h['Nmesh'] / hnext['Nmesh'] - exbot
     src = overlay['delta'].reshape(*(extop-exbot))
-    chunk['delta'] = map_coordinates(src, ipos.T)
+    chunk['delta'] += map_coordinates(src, ipos.T)
     for d in range(3):
       src = overlay['disp'][:, d].reshape(*(extop-exbot))
-      chunk['disp'][:, d] = map_coordinates(src, ipos.T)
+      chunk['disp'][:, d] += map_coordinates(src, ipos.T)
     # write to the full displacement
     writechunk(hnext, fn, chunk)
 
@@ -83,7 +83,7 @@ def main_gadget(A):
                ExcludeCenter, ExcludeRadius, A.cubic)
         chunk = chunk[~excludemask]
       print 'ipos stat', 'min', ipos.min(axis=0), 'max', ipos.max(axis=0)
-      F.append(write_gadget_one('test-gadget.%d' % fid, h, chunk))
+      F.append(write_gadget_one('%s.%d' % (A.prefix, fid), h, chunk))
       fid = fid + 1
 
   Ntot = numpy.zeros(6, dtype='i8')
