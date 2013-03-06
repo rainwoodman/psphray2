@@ -294,7 +294,12 @@ int main(int argc, char * argv[]) {
             if(DownSample == 1) {
                 fname = g_strdup_printf("%s/%s-%d.%0*d", CB.datadir, blocks[ax + 2], Nmesh, width, ThisTask);
             } else {
-                fname = g_strdup_printf("%s/%s-%d.%0*d-%0*d", CB.datadir, blocks[ax + 2], Nmesh, dswidth, i, width, ThisTask);
+                if(ax >= 0) {
+                    /* because this has only the power in this level. */
+                    fname = g_strdup_printf("%s/%s1-%d.%0*d-%0*d", CB.datadir, blocks[ax + 2], Nmesh, dswidth, i, width, ThisTask);
+                } else {
+                    fname = g_strdup_printf("%s/%s-%d.%0*d-%0*d", CB.datadir, blocks[ax + 2], Nmesh, dswidth, i, width, ThisTask);
+                }
             }
             filter(ax, fname, i);
             g_free(fname);

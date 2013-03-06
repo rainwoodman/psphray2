@@ -65,8 +65,8 @@ void init_filter() {
             /* make sure the center is in the box.*/
             double c = remainder(R[r].center[d], CB.BoxSize);
             while(c < 0) c += CB.BoxSize;
-            R[r].ibottom[d] = floor((c - R[r].size[d] * 0.5 * Scale) / R0) - 1;
-            R[r].itop[d] = ceil((c + R[r].size[d] * 0.5 * Scale) / R0)+ 1;
+            R[r].ibottom[d] = Base?0:floor((c - R[r].size[d] * 0.5 * Scale) / R0) - 1;
+            R[r].itop[d] = Base?CB.IC.Nmesh:ceil((c + R[r].size[d] * 0.5 * Scale) / R0)+ 1;
             R[r].isize[d] = R[r].itop[d] - R[r].ibottom[d];
         }
         R[r].stride[0] = R[r].isize[1] * R[r].isize[2];
@@ -130,7 +130,7 @@ void filter(int ax, char * fname, int xDownSample) {
                 crossz_length = sweep(crossz, k, 2, crossy, crossy_length);
                 if(!crossz_length) continue;
                 dsk = k % Nsample;
-                if(Base) {
+                if(Base && ax >= 0) {
                     /* base scale, write displacement and delta,
                      * no special handling of ax==-2 and -1 */
                     float data = PR(dsi, dsj, dsk);
