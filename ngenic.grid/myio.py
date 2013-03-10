@@ -1,7 +1,7 @@
 import numpy
 import os.path
 
-def yieldfilename(H):
+def yieldfilename(H, lookfor='delta'):
   width2 = len(str(H['NTask']))
   if H['DownSample'] > 1:
     width1 = len(str(H['DownSample']))
@@ -9,13 +9,13 @@ def yieldfilename(H):
       for fid in range(H['NTask']):
         fname = '%s/%%s-%d.%0*d-%0*d' % (
             H['datadir'], H['Nmesh'], width1, d, width2, fid)
-        if os.path.exists(fname % 'delta'):
+        if os.path.exists(fname % lookfor):
           yield fname
   else:
     for fid in range(H['NTask']):
       fname = '%s/%%s-%d.%0*d' % (
           H['datadir'], H['Nmesh'], width2, fid)
-      if os.path.exists(fname % 'delta'):
+      if os.path.exists(fname % lookfor):
         yield fname
 
 def readchunk(H, fname, bottom=None, top=None, extra=''):
@@ -24,6 +24,7 @@ def readchunk(H, fname, bottom=None, top=None, extra=''):
   dispy = numpy.memmap(fname % ('dispy' + extra), mode='r', dtype='f4')
   dispz = numpy.memmap(fname % ('dispz' + extra), mode='r', dtype='f4')
   delta = numpy.memmap(fname % ('delta' + extra), mode='r', dtype='f4')
+  print 'read chunk', fname, extra
   if H['Scale'] == 0.0:
     assert H['DownSample'] == 1
     xstart = fid * H['Nmesh'] // H['NTask']
@@ -48,6 +49,7 @@ def readchunk(H, fname, bottom=None, top=None, extra=''):
   return result
 
 def writechunk(H, fname, chunk):
+  print 'write chunk', fname
   assert H['DownSample'] > 1
   # we shall never write anything to a non downsampling level
   chunk['disp'][:, 0].tofile(fname % 'dispx')

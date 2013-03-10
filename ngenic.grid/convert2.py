@@ -24,7 +24,7 @@ def interpolate(h, hnext):
   index = numpy.ravel_multi_index((overlay['ipos'] - exbot).T, extop - exbot)
   overlay = overlay[index.argsort()]
 
-  for fn in list(yieldfilename(hnext)):
+  for fn in list(yieldfilename(hnext, lookfor='delta1')):
     # read in the current level displacement
     chunk = readchunk(hnext, fn, None, None, extra='1')
     ipos = chunk['ipos']
