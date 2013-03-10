@@ -74,21 +74,17 @@ def parseargs():
   
   for name, value in config.items("Levels"):
     sp = value.replace(';', ',').split(',')
-    good = False
-    if len(sp) < 2 or len(sp) > 4:
-      raise 'paramfile format error, need 2/3/4 entries per Level [Levels]'
 
-    if len(sp) >= 2:
+    if len(sp) >= 4:
       # the default is 
       n, s, p, g, d = int(sp[0]), float(sp[1]), -1, False, 1
-    if len(sp) >= 3:
       if 'g' in sp[2]:
         p, g = int(sp[2].replace('g', '')), True
       else:
         p, g = int(sp[2]), False
-    if len(sp) == 4:
       d = int(sp[3])
-
+    else:
+      raise Exception('need four entries per Level')
     Levels.append((n, s, p, g, d))
   
   args.L = numpy.array(Levels, dtype=[
@@ -99,15 +95,7 @@ def parseargs():
            ('downsample', 'i4')])
   args.L.sort(order='Nmesh')
 
-  last = args.L[-1]
-  if last['ptype'] == -1:
-    last['ptype'] = 1
-    last['makegas'] = True
-  nonlast = args.L[:-1]
-  mask = nonlast['ptype'] == -1
-  nonlast[mask]['ptype'] = 2
-  nonlast[mask]['makegas'] = False
-
+  print args.L
   if numpy.sum(args.L['ptype'] == 1) > 1:
     print args.L
     raise Exception('More than 1 dm species assigned to ptype 1, gadget FOF will not'

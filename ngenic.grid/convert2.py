@@ -85,6 +85,7 @@ def main_gadget(A):
       print 'ipos stat', 'min', ipos.min(axis=0), 'max', ipos.max(axis=0)
       for start in range(0, len(chunk), A.Npar):
         F.append(write_gadget_one('%s.%d' % (A.prefix, fid), h, chunk[start:start+A.Npar]))
+        print F[-1][1]['mass']
         fid = fid + 1
 
   Ntot = numpy.zeros(6, dtype='i8')
@@ -92,6 +93,7 @@ def main_gadget(A):
 
   Ntot[:] = numpy.sum([ header['N'] for fname, header in F], axis=0)
   mass[:] = [numpy.unique([header['mass'][ptype] for fname, header in F])[-1] for ptype in range(6)]
+  print [numpy.unique([header['mass'][ptype] for fname, header in F]) for ptype in range(6)]
   print 'Ntot', Ntot
   print 'mass', mass
 

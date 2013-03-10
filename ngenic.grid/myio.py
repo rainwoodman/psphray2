@@ -116,6 +116,7 @@ def write_gadget_one(fname, h, chunk):
     header['flag_double'] = 0
     if gasptype is not None:
       header['N'][gasptype] = N
+    header['mass'][:] = 0
     if skipmassblock:
       header['mass'][dmptype] = dmmass
 
@@ -152,7 +153,8 @@ def write_gadget_one(fname, h, chunk):
     # the coming 7 bits is ilevel.
     # then is the grid position.
     # this system supports a mesh size of 512K.
-    id = numpy.uint64(numpy.ravel_multi_index(chunk['ipos'].T, (h['Nmesh'],) * 3))
+    id = numpy.uint64(numpy.ravel_multi_index(
+       numpy.remainder(chunk['ipos'].T, h['Nmesh']), (h['Nmesh'],) * 3))
     id += h['ilevel'] << 55
     if h['makegas']:
       id = numpy.tile(id, (2, 1))
