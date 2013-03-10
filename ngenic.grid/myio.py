@@ -90,6 +90,8 @@ def write_gadget_one(fname, h, chunk):
   N = len(chunk)
 
   dmptype = h['ptype']
+  skipmassblock = (A.L['ptype'] == dmptype).sum() == 1
+
   if h['makegas']:
     gasptype = 0
     dmmass = mass_c * (A.OmegaM - A.OmegaB)
@@ -112,6 +114,8 @@ def write_gadget_one(fname, h, chunk):
     header['flag_double'] = 0
     if gasptype is not None:
       header['N'][gasptype] = N
+    if skipmassblock:
+      header['mass'][dmptype] = dmmass
 
     writerecord(icfile, header)
 
@@ -156,12 +160,20 @@ def write_gadget_one(fname, h, chunk):
 
     # mass
     if h['makegas']:
-      mass = numpy.empty(N * 2, dtype='f4')
-      mass[:N] = gasmass
-      mass[N:] = dmmass
+      if skipmassblock:
+        mass = numpy.empty(N, dtype='f4')
+        mass[:N] = gasmass
+       
+      else:
+        mass = numpy.empty(N * 2, dtype='f4')
+        mass[:N] = gasmass
+        mass[N:] = dmmass
     else:
-      mass = numpy.empty(N, dtype='f4')
-      mass[:] = dmmass
+      if skipmassblock:
+        mass = numpy.empty(0, dtype='f4')
+      else:
+        mass = numpy.empty(N, dtype='f4')
+        mass[:] = dmmass
     writerecord(icfile, mass)
     mass = None 
 

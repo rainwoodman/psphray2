@@ -83,16 +83,20 @@ def main_gadget(A):
                ExcludeCenter, ExcludeRadius, A.cubic)
         chunk = chunk[~excludemask]
       print 'ipos stat', 'min', ipos.min(axis=0), 'max', ipos.max(axis=0)
-      F.append(write_gadget_one('%s.%d' % (A.prefix, fid), h, chunk))
-      fid = fid + 1
+      for start in range(0, len(chunk), A.Npar):
+        F.append(write_gadget_one('%s.%d' % (A.prefix, fid), h, chunk[start:start+A.Npar]))
+        fid = fid + 1
 
   Ntot = numpy.zeros(6, dtype='i8')
+  mass = numpy.zeros(6, dtype='f8')
 
   Ntot[:] = numpy.sum([ header['N'] for fname, header in F], axis=0)
-  print 'total particles written', Ntot
+  mass[:] = [numpy.unique([header['mass'][ptype] for fname, header in F])[-1] for ptype in range(6)]
+  print 'Ntot', Ntot
+  print 'mass', mass
 
   for fname, header in F:
-    header['mass'] = 0
+    header['mass'] = mass
     header['Ntot_low'][:] = (Ntot & 0xffffffff)
     header['Ntot_high'][:] = (Ntot >> 32)
     header['Nfiles'] = len(F)

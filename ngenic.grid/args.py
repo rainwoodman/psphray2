@@ -108,6 +108,10 @@ def parseargs():
   nonlast[mask]['ptype'] = 2
   nonlast[mask]['makegas'] = False
 
+  if numpy.sum(args.L['ptype'] == 1) > 1:
+    print args.L
+    raise Exception('More than 1 dm species assigned to ptype 1, gadget FOF will not'
+                 + ' work properly')
   args.META = {}
   for i, l in enumerate(args.L):
     args.META[l['Nmesh']] = build_meta_block(args, i)
