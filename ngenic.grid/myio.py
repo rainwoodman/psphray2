@@ -155,10 +155,12 @@ def write_gadget_one(fname, h, chunk):
     # this system supports a mesh size of 512K.
     id = numpy.uint64(numpy.ravel_multi_index(
        numpy.remainder(chunk['ipos'].T, h['Nmesh']), (h['Nmesh'],) * 3))
-    id += h['ilevel'] << 55
+    id += (h['ilevel'] << 55)
     if h['makegas']:
-      id = numpy.tile(id, (2, 1))
-      id[N:] += 1 << 54
+      id = numpy.tile(id, 2)
+      print hex(id[0]), hex(id[N])
+      id[:N] += (1L << 54)
+      print hex(id[0]), hex(id[N])
     writerecord(icfile, id)
     id = None
 
