@@ -61,7 +61,6 @@ def main_gadget(A):
 
     for fn in list(yieldfilename(h)):
       chunk = readchunk(h, fn, None, None)
-      ipos = chunk['ipos']
       if i != 0:
         IncludeCenter = h['ZoomCenter']
         IncludeRadius = h['ZoomRadius']
@@ -71,6 +70,9 @@ def main_gadget(A):
                Nmesh[i - 1],
                IncludeCenter, IncludeRadius, A.cubic)
         chunk = chunk[includemask]
+        print 'using', includemask.sum(), 'particles'
+        ipos = chunk['ipos']
+        print 'ipos stat', 'min', ipos.min(axis=0), 'max', ipos.max(axis=0)
       if i != len(A.L) - 1:
         hnext = A.META[Nmesh[i + 1]]
         ExcludeCenter = hnext['ZoomCenter']
@@ -81,8 +83,11 @@ def main_gadget(A):
                Nmesh[i], 
                Nmesh[i],
                ExcludeCenter, ExcludeRadius, A.cubic)
+        exclude = chunk[excludemask]
         chunk = chunk[~excludemask]
-      print 'ipos stat', 'min', ipos.min(axis=0), 'max', ipos.max(axis=0)
+        print 'excluding', excludemask.sum(), 'particles'
+        ipos = exclude['ipos']
+        print 'exclude stat', 'min', ipos.min(axis=0), 'max', ipos.max(axis=0)
       for start in range(0, len(chunk), A.Npar):
         F.append(write_gadget_one('%s.%d' % (A.prefix, fid), h, chunk[start:start+A.Npar]))
         print F[-1][1]['mass']
@@ -110,9 +115,9 @@ def selectmask(chunk, BoxSize, Nmesh, Nalign, center, radius, cubic):
   assert Nmesh % Nalign == 0
   AlignSpacing = BoxSize / Nalign
   gridcenter = center / AlignSpacing
+  print Nmesh, Nalign, AlignSpacing, gridcenter
   halfsize = 1. / radius
-  dis = chunk['ipos'] // (Nmesh // Nalign) - gridcenter
-  dis[dis < -0.5] += 1
+  dis = (chunk['ipos'] // (Nmesh // Nalign) + 0.5) - gridcenter
   dis *= AlignSpacing
   dis += BoxSize * 0.5
   numpy.remainder(dis, BoxSize, dis)
