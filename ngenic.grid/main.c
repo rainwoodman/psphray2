@@ -222,8 +222,6 @@ int main(int argc, char * argv[]) {
     g_set_print_handler(print_handler);
     mpiu_init();
 
-    struct sigaction sa;
-
     ROOTONLY {
         GError * error = NULL;
         GOptionContext * context = g_option_context_new("paramfile Nmesh");
