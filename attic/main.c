@@ -90,16 +90,15 @@ void test() {
     }
     PackedPar * pack = pstore_pack(pstore->root->first, pstore->root->size);
     pstore_pack_sort(pack);
-    Par * par = pstore_unpack(pack);
     size_t c1 = 0;
     size_t c2 = 0;
     for(i = 0; i < pstore->root->size; i++) {
+        Par * par = pstore_pack_get(pstore, i);
         if(par->type == 0) c1 ++;
         if(par->type == 1) c2 ++;
         if(par->next) {
             g_assert(ipos_compare(par->ipos, par->next->ipos) <= 0);
         }
-        par = par->next;
     }
     g_assert(c1 == NPAR);
     g_assert(c2 == NPAR);

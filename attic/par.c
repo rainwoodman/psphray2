@@ -5,7 +5,7 @@
 
 static struct {
     char name[8];
-    size_t elesize;
+    size_t elesize; /* sizeof Par struct including additional data */
 } PTYPE[256];
 unsigned int PAR_PTYPE_MASK = 0;
 unsigned int PAR_PRIMARY_MASK = 0;
@@ -14,7 +14,7 @@ unsigned int PAR_PRIMARY_MASK = 0;
 void register_ptype(int i, char * name, size_t elesize, int is_primary) {
     strncpy(PTYPE[i].name, name, 8);
     PTYPE[i].name[7] = 0;
-    PTYPE[i].elesize = elesize;
+    PTYPE[i].elesize = sizeof(Par) + elesize;
     PAR_PTYPE_MASK |= (1 << i);
     if(is_primary) {
         PAR_PRIMARY_MASK |= (1L << i);
@@ -24,6 +24,10 @@ void register_ptype(int i, char * name, size_t elesize, int is_primary) {
 extern inline int ipos_get_prefix(ipos_t ipos[3], int depth);
 extern inline int par_is_primary(Par * par);
 extern inline int ipos_compare(ipos_t a[3], ipos_t b[3]);
+
+size_t ptype_get_elesize(int ptype) {
+    return PTYPE[ptype].elesize;
+}
 
 PStore * pstore_new(size_t split_limit) {
     PStore * store = g_new0(PStore, 1);
@@ -48,19 +52,19 @@ void pstore_free_node_r(Node * node) {
     }
 }
 Par * pstore_alloc_par(int ptype) {
-    Par * par = g_slice_alloc(PTYPE[ptype].elesize + sizeof(Par));
+    Par * par = g_slice_alloc(PTYPE[ptype].elesize);
     par->type = ptype;
     return par;
 }
 
 void pstore_free_par(Par * par) {
-    g_slice_free1(PTYPE[par->type].elesize + sizeof(Par), par);
+    g_slice_free1(PTYPE[par->type].elesize, par);
 }
 void pstore_free_par_chain(Par * head) {
     Par * q = NULL;
     for(; head; head = q) {
         q = head->next;
-        g_slice_free1(PTYPE[head->type].elesize + sizeof(Par), head);
+        g_slice_free1(PTYPE[head->type].elesize, head);
     }
 }
 /**
@@ -69,7 +73,7 @@ void pstore_free_par_chain(Par * head) {
  */
 static void pstore_insert_r(PStore * pstore, Node * node, Par * par, int depth);
 Par * pstore_insert(PStore * pstore, ipos_t ipos[3], int ptype) {
-    Par * par = g_slice_alloc0(sizeof(Par) + PTYPE[ptype].elesize);
+    Par * par = g_slice_alloc0(PTYPE[ptype].elesize);
     par->ipos[0] = ipos[0];
     par->ipos[1] = ipos[1];
     par->ipos[2] = ipos[2];
@@ -358,48 +362,65 @@ static Par * pstore_get_nearby_r(PStore * pstore, Node * node, ptrdiff_t index) 
     }
 }
 
+
 /**
- * finish up a pstore, merge the nodes that are too small.
- * also link all particles;
+ * allocate a pack. 
+ * each item in size corresponds to the number of particles for that ptype.
+ * in other words, size[ptype] = number of particles of ptype.
  *
- * unused function.
+ * the last item in size[] is -1.
  */
-static void pstore_merge_r(PStore * pstore, Node * node) {
-    /* this merging process is probably not that useful.
-     * in density calculation we can always check the size of 
-     * the children and if they are too small, do it over the parent.
-     * */
-    short int prefix;
-    short int mergethis = 0;
-    /* first see if there are children to merge at all*/
-    if(!node->link[0]) return;
-    /* then see if need to merge (any children is too small */
-    for(prefix = 0; prefix < 8; prefix++) {
-        if(node->link[prefix]->primary_size  < pstore->merge_limit 
-        && node->link[prefix]->size > 0) {
-           /* merge only if there are particles in the node,
-            * pure empty cells spans empty space.
-            * */
-            mergethis = 1;
-            break;
-        }
+PackedPar * pstore_pack_create_a(ptrdiff_t N[]) {
+    size_t parbytes = 0;
+    size_t indexbytes = 0;
+    ptrdiff_t i = 0;
+    ptrdiff_t Nsum = 0;
+    for(i = 0; i < 256 && N[i] >= 0; i++) {
+        parbytes += PTYPE[i].elesize * N[i];
+        Nsum += N[i];
     }
-    if(!mergethis) {
-        for(prefix = 0; prefix < 8; prefix++) {
-            pstore_merge_r(pstore, node->link[prefix]);
-        }
-    } else {
-        for(prefix = 0; prefix < 8; prefix++) {
-            g_slice_free(Node, node->link[prefix]);
-            node->link[prefix] = NULL;
-        }
-    }
+    indexbytes = Nsum * sizeof(ptrdiff_t);
+    PackedPar * pack = g_malloc(sizeof(PackedPar) + parbytes + indexbytes);
+    pack->size = Nsum;
+    pack->totalbytes = sizeof(PackedPar) + parbytes + indexbytes;
+    return pack;
+}
+PackedPar * pstore_pack_create_simple(int ptype, ptrdiff_t size) {
+    ptrdiff_t Nsum = size;
+    ptrdiff_t indexbytes = Nsum * sizeof(ptrdiff_t);
+    size_t parbytes = Nsum * PTYPE[ptype].elesize;
+    PackedPar * pack = g_malloc(sizeof(PackedPar) + parbytes + indexbytes);
+    pack->size = Nsum;
+    pack->totalbytes = sizeof(PackedPar) + parbytes + indexbytes;
+    return pack;
+}
+
+/* get a pointer that points to the particle offset index table 
+ * the I-th particle starts at
+ *    pstore_pack_get_ptr(pack) + pstore_pack_get_index(pack)[I]
+ * */
+static ptrdiff_t * pstore_pack_get_index(PackedPar * pack) {
+    return (ptrdiff_t *) pack->data;
+}
+/* get a pointer that points to the particle data*/
+static char * pstore_pack_get_ptr(PackedPar * pack) {
+    return (char * ) ((ptrdiff_t *) pack->data + pack->size);
+}
+
+/*
+ * get the pointer to a particle at cursor position
+ * */
+Par * pstore_pack_get(PackedPar * pack, ptrdiff_t cursor) {
+    g_assert(cursor >= 0 && cursor < pack->size);
+    return (Par *) (pstore_pack_get_ptr(pack) + pstore_pack_get_index(pack)[cursor]);
 }
 
 /**
  * pack particles into a packedpar struct
+ * first points to a link list of particles.
  *
- * the next pointers are invalid but we do not bother to clear them.
+ * the next pointers are invalidated -- it still points to the old next
+ * part in the original link list. we keep them in case needed for debugging.
  * 
  */
 PackedPar * pstore_pack(Par * first, size_t size) {
@@ -410,45 +431,16 @@ PackedPar * pstore_pack(Par * first, size_t size) {
         N[par->type] ++;
     }
 
-    PackedPar * pack = pstore_pack_create_a(NULL, N);
-    char * ptr = pack->data;
-    ptrdiff_t * index = (ptrdiff_t * )(pack->data + pack->bytes);
-    for(par = first, i = 0; i < size; i++, par = par->next) {
-        size_t width = sizeof(Par) + PTYPE[par->type].elesize;
-        memcpy(ptr, par, width);
-        index[i] = ptr - pack->data;
-        ptr += width;
+    PackedPar * pack = pstore_pack_create_a(N);
+    ptrdiff_t * index = pstore_pack_get_index(pack);
+    char * ptr = pstore_pack_get_ptr(pack);
+    char * q;
+    for(par = first, i = 0, q = ptr; i < size; i++, par = par->next) {
+        size_t width = PTYPE[par->type].elesize;
+        memcpy(q, par, width);
+        index[i] = q - pack->data;
+        q += width;
     }
-    return pack;
-}
-
-/**
- * allocate a pack. 
- * if ptype is not NULL, then ptype is a list of ptype, terminated by -1.
- * if ptype is NULL, assume it starts from 0 upto when size[i] == -1
- */
-PackedPar * pstore_pack_create_a(int *ptype, ptrdiff_t size[]) {
-    size_t bytes = 0;
-    ptrdiff_t i = 0;
-    ptrdiff_t N[256] = {0};
-    ptrdiff_t Nsum = 0;
-    if(ptype != NULL) {
-        for(i = 0; ptype[i] >=0; i++) {
-            N[ptype[i]] = size[i];
-        }
-    } else {
-        /* assume size is sequential for ptype 0 ~ N */
-        for(i = 0; i < 256 && size[i] >=0; i++) {
-            N[i] = size[i];
-        }
-    }
-    for(i = 0; i < 256; i++) {
-        bytes += (PTYPE[i].elesize + sizeof(Par)) * N[i];
-        Nsum += N[i];
-    }
-    PackedPar * pack = g_malloc(sizeof(PackedPar) + bytes + sizeof(ptrdiff_t) * Nsum);
-    pack->bytes = bytes;
-    pack->size = Nsum;
     return pack;
 }
 
@@ -464,66 +456,30 @@ PackedPar * pstore_pack_create_a(int *ptype, ptrdiff_t size[]) {
  *
  * */
 void pstore_pack_push(PackedPar * pack, ptrdiff_t * cursor, Par * par) {
-    ptrdiff_t * index = (ptrdiff_t *) (pack->data + pack->bytes);
+    ptrdiff_t * index = pstore_pack_get_index(pack);
     if(*cursor == 0) index[0] = 0;
-    g_assert(*cursor < pack->size);
-    g_assert(index[*cursor] < pack->bytes);
-    g_assert(index[*cursor] >= 0);
-    size_t width = sizeof(Par) + PTYPE[par->type].elesize;
-    void * ptr = pack->data + index[*cursor];
-    memcpy(ptr, par, width);
+    g_assert(*cursor < pack->size); /* the pack is full!*/
+    size_t width = PTYPE[par->type].elesize;
+    char * ptr = pstore_pack_get_ptr(pack);
+    memcpy(ptr + index[*cursor], par, width);
     if(*cursor < pack->size - 1) {
         index[*cursor + 1] = index[*cursor] + width;
     }
     *cursor = *cursor + 1;
-}
-/**
- * unpack packed par to a GSList kind of structure.
- *
- * this is done in place. do not free any elements. free the entire pack
- * with one g_free, or the free of whatever corresponding allocator
- * that allocated the pack.
- *
- * Notice that with pstore_pack_get, we can already 
- * randomly access a pack.
- *
- * */
-
-Par * pstore_unpack(PackedPar * pack) {
-    ptrdiff_t i;
-    char * ptr = pack->data;
-    ptrdiff_t * index = (ptrdiff_t *) (pack->data + pack->bytes);
-    for(i = 0; i < pack->size - 1; i++) {
-        Par * par = (Par* ) (pack->data + index[i]);
-        par->next = (Par* ) (pack->data + index[i + 1]);
-    }
-    /* remember to set the last next pointer to NULL, it used to point
-     * to outside of the data buffer */
-    Par * par = (Par *) (pack->data + index[i]);
-    par->next = NULL;
-    /* return the first par */
-    return (Par *) (pack->data + index[0]);
-}
-
-Par * pstore_pack_get(PackedPar * pack, ptrdiff_t cursor) {
-    ptrdiff_t * index = (ptrdiff_t *) (pack->data + pack->bytes);
-    g_assert(cursor >= 0 && cursor < pack->size);
-    g_assert(index[cursor] >= 0 && index[cursor] < pack->bytes);
-    return (Par *) (pack->data + index[cursor]);
 }
 
 /*
  * sort particle in a pack by their positions, almost in place.
  * */
 static int pstore_pack_sort_compare_func(ptrdiff_t * a, ptrdiff_t * b, PackedPar * pack) {
-    char * ptr = pack->data;
+    char * ptr = pstore_pack_get_ptr(pack);
     return ipos_compare(((Par *)(ptr + *a))->ipos, ((Par *)(ptr + *b))->ipos);
 }
 
 void pstore_pack_sort(PackedPar * pack) {
-    char * ptr = pack->data;
-    ptrdiff_t * index = (ptrdiff_t * ) (pack->data + pack->bytes);
-    g_qsort_with_data(index, pack->size, sizeof(ptrdiff_t), (GCompareDataFunc) pstore_pack_sort_compare_func, pack);
+    g_qsort_with_data(pstore_pack_get_index(pack), 
+            pack->size, sizeof(ptrdiff_t), 
+                (GCompareDataFunc) pstore_pack_sort_compare_func, pack);
 }
 
 static void pstore_check_r(PStore * pstore, Node * node, int depth, ipos_t x, ipos_t y, ipos_t z);
@@ -593,3 +549,72 @@ static void pstore_check_r(PStore * pstore, Node * node, int depth, ipos_t x, ip
         g_assert(pc == node->primary_size);
     }
 }
+
+#if 0
+#error This function is not used and adds to complexity to the API.
+/**
+ * unpack packed par to a GSList kind of structure.
+ *
+ * this is done in place. do not free any elements. free the entire pack
+ * with one g_free, or the free of whatever corresponding allocator
+ * that allocated the pack.
+ *
+ * Notice that with pstore_pack_get, we can already 
+ * randomly access a pack.
+ *
+ * */
+
+Par * pstore_unpack(PackedPar * pack) {
+    ptrdiff_t i;
+    char * ptr = pack->data;
+    ptrdiff_t * index = (ptrdiff_t *) (pack->data + pack->bytes);
+    for(i = 0; i < pack->size - 1; i++) {
+        Par * par = (Par* ) (pack->data + index[i]);
+        par->next = (Par* ) (pack->data + index[i + 1]);
+    }
+    /* remember to set the last next pointer to NULL, it used to point
+     * to outside of the data buffer */
+    Par * par = (Par *) (pack->data + index[i]);
+    par->next = NULL;
+    /* return the first par */
+    return (Par *) (pack->data + index[0]);
+}
+
+/**
+ * finish up a pstore, merge the nodes that are too small.
+ * also link all particles;
+ *
+ * unused function.
+ */
+static void pstore_merge_r(PStore * pstore, Node * node) {
+    /* this merging process is probably not that useful.
+     * in density calculation we can always check the size of 
+     * the children and if they are too small, do it over the parent.
+     * */
+    short int prefix;
+    short int mergethis = 0;
+    /* first see if there are children to merge at all*/
+    if(!node->link[0]) return;
+    /* then see if need to merge (any children is too small */
+    for(prefix = 0; prefix < 8; prefix++) {
+        if(node->link[prefix]->primary_size  < pstore->merge_limit 
+        && node->link[prefix]->size > 0) {
+           /* merge only if there are particles in the node,
+            * pure empty cells spans empty space.
+            * */
+            mergethis = 1;
+            break;
+        }
+    }
+    if(!mergethis) {
+        for(prefix = 0; prefix < 8; prefix++) {
+            pstore_merge_r(pstore, node->link[prefix]);
+        }
+    } else {
+        for(prefix = 0; prefix < 8; prefix++) {
+            g_slice_free(Node, node->link[prefix]);
+            node->link[prefix] = NULL;
+        }
+    }
+}
+#endif

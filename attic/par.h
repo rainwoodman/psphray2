@@ -105,17 +105,17 @@ Par * pstore_get_nearby(PStore * pstore, ptrdiff_t index);
  * ready for MPI send/recv.
  * */
 typedef struct {
+    size_t totalbytes; /* total size in bytes, including the tailing index and this header */
     size_t size;   /* total number of particles */
-    size_t bytes;  /* size of data in bytes, excluding the tailing index */
-    char data[];
+    char data[];  
+    /* data contains two parts, first a sequence of variable unitsize particles
+     * then an index that points to the starting of each particles   */
 } PackedPar;
 
-PackedPar * pstore_pack_create_a(int * ptype, ptrdiff_t size[]);
+PackedPar * pstore_pack_create_a(ptrdiff_t size[]);
+PackedPar * pstore_pack_create_simple(int ptype, ptrdiff_t size);
 PackedPar * pstore_pack(Par * first, size_t size);
-inline size_t pstore_pack_total_bytes(PackedPar * pack) {
-    return pack->bytes + sizeof(PackedPar) + sizeof(ptrdiff_t) * pack->size;
-}
-Par * pstore_unpack(PackedPar * pack);
+
 void pstore_pack_push(PackedPar * pack, ptrdiff_t * cursor, Par * par);
 Par * pstore_pack_get(PackedPar * pack, ptrdiff_t cursor);
 void pstore_pack_sort(PackedPar * pack);

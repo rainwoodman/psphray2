@@ -29,6 +29,8 @@ typedef struct {
 static void hydro_module_init() {
     register_ptype(0, "gas", sizeof(GasProp), FALSE);
     register_ptype(1, "dm", 0, TRUE);
+    register_ptype(2, "dm", 0, FALSE);
+    register_ptype(3, "dm", 0, FALSE);
     register_ptype(4, "star", sizeof(StarProp), FALSE);
     register_ptype(5, "bh", sizeof(BHProp), FALSE);
 }

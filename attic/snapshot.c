@@ -14,6 +14,7 @@ static int ReaderSize; /* total number of tasks this reader will scatter to */
 static int ReaderColor; /* the rank of the reader group relative to all CB.NReadder*/
 static int Nfile;
 static int NReader;
+extern size_t ptype_get_elesize(int ptype);
 
 #define LEADERONLY if(ReaderRank == 0)
 
@@ -104,7 +105,7 @@ void snapshot_read_header(int fid, SnapHeader * h) {
     g_mapped_file_unref(file);
 }
 
-static void snapshot_prepare(SnapHeader * h, ptrdiff_t Nglobal[6]) {
+static void snapshot_prepare(SnapHeader * h, ptrdiff_t Nglobal[6], int * fidstart, int * fidend) {
     ROOTONLY {
         snapshot_read_header(0, h);
         if(CB.C.h != h->h) {
@@ -143,9 +144,11 @@ static void snapshot_prepare(SnapHeader * h, ptrdiff_t Nglobal[6]) {
         Nglobal[ptype] = 0;
     }
     LEADERONLY {
+        *fidstart = ReaderColor * Nfile / NReader;
+        *fidend = (ReaderColor + 1) * Nfile / NReader;
         int fid;
-        for(fid = ReaderColor * Nfile / NReader;
-            fid < (ReaderColor + 1) * Nfile / NReader;
+        for(fid = *fidstart;
+            fid < *fidend;
             fid ++) {
             SnapHeader h;
             snapshot_read_header(fid, &h);
@@ -195,7 +198,10 @@ static uint64_t read_id(char ** p, int longid) {
     return rt;
 }
 
-static PackedPar * snapshot_to_pack(int fid, ptrdiff_t Nread[6]) {
+/*
+ * Read a snapshot file fid into 6 PackedPar, one per ptype.
+ * */
+static void snapshot_to_pack(int fid, PackedPar * pack[6]) {
     GError * error = NULL;
     char * buffer = NULL;
     GMappedFile * file = NULL;
@@ -212,300 +218,231 @@ static PackedPar * snapshot_to_pack(int fid, ptrdiff_t Nread[6]) {
     buffer = g_mapped_file_get_contents(file);
     g_free(filename);
 
-    size_t Ntot = 0;
-    ptrdiff_t N[7];
+    ptrdiff_t N[6];
     int ptype;
 
-    for(int i = 0; i < 6; i++) {
-        Ntot += h.N[i];
-        N[i] = h.N[i];
-        Nread[i] = N[i];
-    }
-    N[6] = -1;
-
-    PackedPar * temp = pstore_pack_create_a(NULL, N);
-    ptrdiff_t iter = 0;
-    for(ptype = 0; ptype < 6; ptype++) {
+    for(int ptype = 0; ptype < 6; ptype++) {
+        N[ptype] = h.N[ptype];
+        pack[ptype] = pstore_pack_create_simple(ptype, N[ptype]);
         Par * par = pstore_alloc_par(ptype);
         ptrdiff_t i;
+        ptrdiff_t iter = 0;
         for(i = 0; i < N[ptype]; i++) {
-            pstore_pack_push(temp, &iter, par);
+            pstore_pack_push(pack[ptype], &iter, par);
         }
         pstore_free_par(par);
+        g_assert(iter == N[ptype]);
     }
-    g_assert(iter == Ntot);
 
     p = buffer + 256 + 4 + 4; /* skip header */
     ptrdiff_t i = 0;
     int check;
-    check = start_block(&p);
-    for(i = 0; i < Ntot; i++) {
-        Par * par = pstore_pack_get(temp, i);
-        par->ipos[0] = read_real(&p, h.double_precision) / CB.BoxSize * IPOS_LIMIT;
-        par->ipos[1] = read_real(&p, h.double_precision) / CB.BoxSize * IPOS_LIMIT;
-        par->ipos[2] = read_real(&p, h.double_precision) / CB.BoxSize * IPOS_LIMIT;
-    }
-    check_block(&p, check);
-    check = start_block(&p);
-    for(i = 0; i < Ntot; i++) {
-        Par * par = pstore_pack_get(temp, i);
-        par->vel[0] = read_real(&p, h.double_precision);
-        par->vel[1] = read_real(&p, h.double_precision);
-        par->vel[2] = read_real(&p, h.double_precision);
-    }
-    check_block(&p, check);
-    check = start_block(&p);
-    for(i = 0; i < Ntot; i++) {
-        Par * par = pstore_pack_get(temp, i);
-        par->id = read_id(&p, CB.IDByteSize == 8);
-    }
-    check_block(&p, check);
-
-    ptrdiff_t Nmass = 0;
-    /* mass tab handling */
-    for(int i=0; i< 6; i++) {
-        if (h.masstab[i] != 0) Nmass += N[i];
-    }
-
-    if(Nmass > 0) {
+    if(N[0] + N[1] + N[2] + N[3] + N[4] + N[5] > 0) {
         check = start_block(&p);
-        for(i = 0; i < Ntot; i++) {
-            Par * par = pstore_pack_get(temp, i);
-            if(h.masstab[par->type] == 0) {
-                par->mass = read_real(&p, h.double_precision);
-            } else {
-                par->mass = h.masstab[par->type];
+        for(ptype = 0; ptype < 6; ptype++) {
+            for(i = 0; i < N[ptype]; i++) {
+                Par * par = pstore_pack_get(pack[ptype], i);
+                par->ipos[0] = read_real(&p, h.double_precision) / CB.BoxSize * IPOS_LIMIT;
+                par->ipos[1] = read_real(&p, h.double_precision) / CB.BoxSize * IPOS_LIMIT;
+                par->ipos[2] = read_real(&p, h.double_precision) / CB.BoxSize * IPOS_LIMIT;
+            }
+        }
+        check_block(&p, check);
+        check = start_block(&p);
+        for(ptype = 0; ptype < 6; ptype++) {
+            for(i = 0; i < N[ptype]; i++) {
+                Par * par = pstore_pack_get(pack[ptype], i);
+                par->vel[0] = read_real(&p, h.double_precision);
+                par->vel[1] = read_real(&p, h.double_precision);
+                par->vel[2] = read_real(&p, h.double_precision);
+            }
+        }
+        check_block(&p, check);
+        check = start_block(&p);
+        for(ptype = 0; ptype < 6; ptype++) {
+            for(i = 0; i < N[ptype]; i++) {
+                Par * par = pstore_pack_get(pack[ptype], i);
+                par->id = read_id(&p, CB.IDByteSize == 8);
             }
         }
         check_block(&p, check);
     }
+
+    if( N[0] * (h.masstab[0] != 0)
+     +  N[1] * (h.masstab[1] != 0)
+     +  N[2] * (h.masstab[2] != 0)
+     +  N[3] * (h.masstab[3] != 0)
+     +  N[4] * (h.masstab[4] != 0)
+     +  N[5] * (h.masstab[5] != 0)
+    ) {
+        check = start_block(&p);
+        for(ptype = 0; ptype < 6; ptype ++) {
+            for(i = 0; i < N[ptype]; i++) {
+                Par * par = pstore_pack_get(pack[ptype], i);
+                if(h.masstab[ptype] == 0) {
+                    par->mass = read_real(&p, h.double_precision);
+                } else {
+                    par->mass = h.masstab[ptype];
+                }
+            }
+        }
+        check_block(&p, check);
+    }
+
+#define READ(converter, element, ptype) \
+    for(i = 0; i < N[ptype]; i++) {\
+        Par * par = pstore_pack_get(pack[ptype], i); \
+        converter(par)->element = read_real(&p, h.double_precision); \
+    }
     if(N[0] > 0) {
         check = start_block(&p);
-        for(i = 0; i < Ntot; i++) {
-            Par * par = pstore_pack_get(temp, i);
-            if(par->type != 0) continue;
-            AS_GAS(par)->ie = read_real(&p, h.double_precision);
-        }
+        READ(AS_GAS, ie, 0);
         check_block(&p, check);
         check = start_block(&p);
-        for(i = 0; i < Ntot; i++) {
-            Par * par = pstore_pack_get(temp, i);
-            if(par->type != 0) continue;
-            AS_GAS(par)->rho = read_real(&p, h.double_precision);
-        }
+        READ(AS_GAS, rho, 0);
         check_block(&p, check);
         check = start_block(&p);
-        for(i = 0; i < Ntot; i++) {
-            Par * par = pstore_pack_get(temp, i);
-            if(par->type != 0) continue;
-            AS_GAS(par)->ye = read_real(&p, h.double_precision);
-        }
+        READ(AS_GAS, ye, 0);
         check_block(&p, check);
         check = start_block(&p);
-        for(i = 0; i < Ntot; i++) {
-            Par * par = pstore_pack_get(temp, i);
-            if(par->type != 0) continue;
-            AS_GAS(par)->xHI = read_real(&p, h.double_precision);
-        }
+        READ(AS_GAS, xHI, 0);
         check_block(&p, check);
         check = start_block(&p);
-        for(i = 0; i < Ntot; i++) {
-            Par * par = pstore_pack_get(temp, i);
-            if(par->type != 0) continue;
-            AS_GAS(par)->sml = read_real(&p, h.double_precision);
-        }
+        READ(AS_GAS, sml, 0);
         check_block(&p, check);
         check = start_block(&p);
-        for(i = 0; i < Ntot; i++) {
-            Par * par = pstore_pack_get(temp, i);
-            if(par->type != 0) continue;
-            AS_GAS(par)->sfr = read_real(&p, h.double_precision);
-        }
+        READ(AS_GAS, sfr, 0);
         check_block(&p, check);
     }
     if(N[4] > 0) {
         check = start_block(&p);
-        for(i = 0; i < Ntot; i++) {
-            Par * par = pstore_pack_get(temp, i);
-            if(par->type != 4) continue;
-            AS_STAR(par)->sft = read_real(&p, h.double_precision);
-        }
+        READ(AS_STAR, sft, 4);
         check_block(&p, check);
     }
     if(N[0] + N[4] > 0) {
         check = start_block(&p);
-        for(i = 0; i < Ntot; i++) {
-            Par * par = pstore_pack_get(temp, i);
-            if(par->type != 0) continue;
-            AS_GAS(par)->met = read_real(&p, h.double_precision);
-        }
-        for(i = 0; i < Ntot; i++) {
-            Par * par = pstore_pack_get(temp, i);
-            if(par->type != 4) continue;
-            AS_STAR(par)->met = read_real(&p, h.double_precision);
-        }
+        READ(AS_GAS, met, 0);
+        READ(AS_STAR, met, 4);
         check_block(&p, check);
     }
     if(N[5] > 0) {
         check = start_block(&p);
-        for(i = 0; i < Ntot; i++) {
-            Par * par = pstore_pack_get(temp, i);
-            if(par->type != 5) continue;
-            AS_BH(par)->bhmass = read_real(&p, h.double_precision);
-        }
+        READ(AS_BH, bhmass, 5);
         check_block(&p, check);
         check = start_block(&p);
-        for(i = 0; i < Ntot; i++) {
-            Par * par = pstore_pack_get(temp, i);
-            if(par->type != 5) continue;
-            AS_BH(par)->bhmdot = read_real(&p, h.double_precision);
-        }
+        READ(AS_BH, bhmdot, 5);
         check_block(&p, check);
     }
     g_mapped_file_unref(file);
-    return temp;
 }
+
+
+/* this is a collective MPI routine
+ * it reads all snapshot files and returns
+ * the distributed particles in a PackedPar list
+ * on current local processor.
+ * */
 PackedPar * snapshot_read(SnapHeader * h) {
+    struct queue_element {
+        PackedPar * pack;
+        ptrdiff_t first;
+    };
 
     ptrdiff_t Nlocal[7];
-    ptrdiff_t Nsend[7];
     ptrdiff_t Nglobal[6];
     int ptype;
 
     /* this must go first, it sets up Nreader, Nfile */
-    snapshot_prepare(h, Nglobal);
+    int fidstart;
+    int fidend;
+
+    snapshot_prepare(h, Nglobal, &fidstart, &fidend);
 
     for(ptype = 0; ptype < 6; ptype++) {
         Nlocal[ptype] = (ReaderRank + 1) * Nglobal[ptype] / ReaderSize 
                   - ReaderRank * Nglobal[ptype] / ReaderSize;
     }
     Nlocal[6] = -1;
+    /* This will be the particles stored locally, after the distribution.
+     * */
+    PackedPar * pack = NULL;
 
-    int fid;
-    int fidstart = ReaderColor * Nfile / NReader;
-    int fidend  = (ReaderColor + 1) * Nfile / NReader;
-
-    PackedPar ** packread = g_newa(PackedPar*,  fidend - fidstart) - fidstart;
-    ptrdiff_t (*Nremain) [6] = (ptrdiff_t (*)[6]) 
-                g_newa(ptrdiff_t, (fidend - fidstart) * 6) - fidstart;
-    int * stale = g_newa(int, fidend - fidstart) - fidstart;
-
-    Par * head[6] = {NULL, NULL, NULL, NULL, NULL, NULL};
-
-    PackedPar * pack = pstore_pack_create_a(NULL, Nlocal); /* return value */
-
-    ptrdiff_t cursor[6] = {0};
-    int receiverrank = 0;
-    LEADERONLY for(fid = fidstart; fid < fidend; fid ++) { 
-        int ptype;
-        int i;
-        /* first read snapshot into a pack */
-        packread[fid] = snapshot_to_pack(fid, Nremain[fid]);
-
-        stale[fid] = 0;
-        /* the initial staleness if the file contains no particles of given type*/
-        for(ptype = 0; ptype < 6; ptype ++) {
-            if(Nremain[fid][ptype] == 0) stale[fid]++;
-        }
-        /* single linked list prepend and reverse = O(N),
-         * append = O(N**2) */
-        for(ptype = 0; ptype < 6; ptype ++) {
-            head[ptype] = (Par * ) g_slist_reverse((GSList * ) head[ptype]);
-        }
-        for(i = 0; i < packread[fid]->size; i++) {
-            /* convert pack to 6 link lists, one for each type, 
-             * add to the active set */
-            Par * p = pstore_pack_get(packread[fid], i);
-            p->next = head[p->type];
-            head[p->type] = p;
-            cursor[p->type] ++;
-        }
-        for(ptype = 0; ptype < 6; ptype ++) {
-            head[ptype] = (Par * ) g_slist_reverse((GSList * ) head[ptype]);
-        }
-        /* see if we are read to spawn a pack for a worker */
-        int rippen;
-        do {
-            rippen = 0;
+    LEADERONLY {
+        int fid = fidstart;
+        GQueue queue[6] = {
+                G_QUEUE_INIT, 
+                G_QUEUE_INIT, 
+                G_QUEUE_INIT, 
+                G_QUEUE_INIT, 
+                G_QUEUE_INIT, 
+                G_QUEUE_INIT
+        };
+        int rr = 0;
+        for(rr = 0; rr < ReaderSize; rr++) {
+            ptrdiff_t Nsend[7];
             for(ptype = 0; ptype < 6; ptype++) {
-                Nsend[ptype] = (receiverrank + 1) * Nglobal[ptype] / ReaderSize 
-                          - receiverrank * Nglobal[ptype] / ReaderSize;
+                Nsend[ptype] = (rr + 1) * Nglobal[ptype] / ReaderSize 
+                          - rr * Nglobal[ptype] / ReaderSize;
             }
             Nsend[6] = -1;
+            PackedPar * packsend = pstore_pack_create_a(Nsend);
+            ptrdiff_t iter = 0;
+            ptrdiff_t j[6] = {0};
             for(ptype = 0; ptype < 6; ptype ++) {
-                if(cursor[ptype] >= Nsend[ptype]) {
-                    rippen ++;
-                }
-            }
-            /* not yet !*/
-            if(rippen != 6) {
-                g_debug("rippen = %d", rippen);
-                g_debug("cursor = %ld %ld %ld %ld %ld %ld",
-                    cursor[0], cursor[1], cursor[2], cursor[3], cursor[4], cursor[5]);
-                g_debug("Nsend = %ld %ld %ld %ld %ld %ld",
-                    Nsend[0], Nsend[1], Nsend[2], Nsend[3], Nsend[4], Nsend[5]);
-                break;
-            }
-            PackedPar * packsend = pstore_pack_create_a(NULL, Nsend);
-            ptrdiff_t iter = 0; 
-            for(ptype = 0; ptype < 6; ptype ++) {
-                Par * par;
-                ptrdiff_t j; 
-                /* push this many each type to the spawning pack */
-                for(par = head[ptype], j = 0; j < Nsend[ptype]; j++, par = par->next) {
-                    pstore_pack_push(packsend, &iter, par);
-                }
-                /* and remove them from the active set */
-                head[ptype] = par;
-                cursor[ptype] -= Nsend[ptype];
-                /* see if any of the packread is no longer in use and free it */
-                ptrdiff_t deduct = Nsend[ptype];
-                int fid2;
-                for(fid2 = fidstart; fid2 <= fid; fid2++) {
-                    ptrdiff_t size = Nremain[fid2][ptype];
-                    if(size >= deduct) {
-                        size -= deduct;
-                        deduct = 0;
+                struct queue_element * qe;
+                while(j[ptype] < Nsend[ptype]) {
+                    qe = g_queue_pop_head(&queue[ptype]);
+                    while(qe == NULL) {
+                        PackedPar * packread[6];
+                        snapshot_to_pack(fid, packread);
+                        fid ++;
+                        int i;
+                        for(i = 0; i < 6; i ++) {
+                            if(packread[i]->size == 0) {
+                                g_free(packread[i]);
+                                continue;
+                            }
+                            struct queue_element * nqe = g_slice_new(struct queue_element);
+                            nqe->pack = packread[i];
+                            nqe->first = 0;
+                            g_queue_push_tail(&queue[i], nqe);
+                            g_debug("input queue of ptype %d: length = %d;\n",
+                                i, 
+                                g_queue_get_length(&queue[i]));
+                        }
+                        qe = g_queue_pop_head(&queue[ptype]);
+                    }
+                    for(;
+                        j[ptype] < Nsend[ptype] && qe->first < qe->pack->size; 
+                        j[ptype]++, qe->first++) {
+                        Par * par = pstore_pack_get(qe->pack, qe->first); 
+                        pstore_pack_push(packsend, &iter, par);
+                    }
+                    if(qe->first == qe->pack->size) {
+                        g_free(qe->pack);
+                        g_slice_free(struct queue_element, qe);
+                        /* this chunk has been used up, need to read a new file */
                     } else {
-                        deduct -= size;
-                        size = 0;
-                    }
-                    if(size == 0 && Nremain[fid2][ptype] != 0 
-                        && stale[fid2] < 6) {
-                        /* toggle the staleness if Nremain drops to zero*/
-                        stale[fid2] ++;
-                    }
-                    Nremain[fid2][ptype] = size;
-                    /* if any particle type is nolonger in use, then
-                     * staleness goes up. when staleness goes to 6 then it's done */
-                    if(stale[fid2] == 6 && packread[fid2]) {
-                        g_free(packread[fid2]);  
-                        packread[fid2] = NULL;
+                        g_queue_push_head(&queue[ptype], qe);
                     }
                 }
             }
             /* now send packsend to the receiver */
-            if(receiverrank == 0) {
+            if(rr == 0) {
                 pack = packsend;
             } else {
-                g_debug("a pack is rippen and sent to %d", receiverrank);
-                MPI_Send(packsend, pstore_pack_total_bytes(packsend), MPI_BYTE, receiverrank, receiverrank, ReaderComm);
+                g_debug("a pack is rippen and sent to %d", rr);
+                MPI_Send(packsend, packsend->totalbytes, MPI_BYTE, rr, rr, ReaderComm);
                 g_free(packsend);
             }
-            receiverrank ++;
-        } while(TRUE);
-    }
-    LEADERONLY {
-        /* assert that temporary buffers for reading are freed. */
-        for(fid = fidstart; fid < fidend; fid++) {
-            if(packread[fid] != NULL) {
-                g_error("%d is not freed, stale=%d", fid, stale[fid]);
-                /* there is a bug in the code if this happens. */
-            }
         }
-    }
-    LEADERONLY {} else {
-        MPI_Recv(pack, pstore_pack_total_bytes(pack), MPI_BYTE, 
+        for(ptype = 0; ptype < 6; ptype++) {
+            g_assert(g_queue_is_empty(&queue[ptype]));
+        }
+        g_assert(fid == fidend);
+    } else {
+        pack = pstore_pack_create_a(Nlocal); 
+        MPI_Recv(pack, pack->totalbytes, MPI_BYTE, 
                     0, ReaderRank, ReaderComm, MPI_STATUS_IGNORE);
         g_debug("%03d received the particle pack", ThisTask);
     }
