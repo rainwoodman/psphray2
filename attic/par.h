@@ -55,6 +55,19 @@ typedef struct {
 } PStore;
 
 /**
+ * packed particles,
+ * use g_free to free
+ * ready for MPI send/recv.
+ * */
+typedef struct {
+    size_t nbytes; /* total size in bytes, including the tailing index and this header */
+    size_t size;   /* total number of particles */
+    char data[];  
+    /* data contains two parts, first a sequence of variable unitsize particles
+     * then an index that points to the starting of each particles   */
+} PackedPar;
+
+/**
  * returns the prefix of the ipos at given depth.
  *
  * depth starts from 0, which is the highest bit
@@ -86,38 +99,28 @@ inline int par_is_primary(Par * par) {
 }
 
 void register_ptype(int ptype, char * name, size_t elesize, int is_primary);
-PStore * pstore_new(size_t split_limit);
 
-void pstore_free_node(Node * node);
-void pstore_free_node_r(Node * node);
-Par * pstore_alloc_par(int ptype);
+/* these functions create /allocate a pstore */
+PStore * pstore_new(size_t split_limit);
+PStore * pstore_unpack(PackedPar * pack);
+
+Par * pstore_insert_par(PStore * pstore, ipos_t ipos[3], int ptype);
+void pstore_remove_par(PStore * pstore, Par * par);
 void pstore_free_par(Par * par);
-void pstore_free_par_chain(Par * head);
-Par * pstore_insert(PStore * pstore, ipos_t ipos[3], int ptype);
-void pstore_remove(PStore * pstore, Par * par);
+void pstore_remove_node(PStore * pstore, Node * node);
+void pstore_free_node(Node * node);
 Par * pstore_node_previous_par(Node * node);
 Par * pstore_node_next_par(Node * node);
-Par * pstore_get_nearby(PStore * pstore, ptrdiff_t index);
+Par * pstore_get_nearby_par(PStore * pstore, ptrdiff_t index);
 
-/**
- * packed particles,
- * use g_free to free
- * ready for MPI send/recv.
- * */
-typedef struct {
-    size_t nbytes; /* total size in bytes, including the tailing index and this header */
-    size_t size;   /* total number of particles */
-    char data[];  
-    /* data contains two parts, first a sequence of variable unitsize particles
-     * then an index that points to the starting of each particles   */
-} PackedPar;
 
+/* these function allocate/create a PackedPar structure */
 PackedPar * pstore_pack_create_a(ptrdiff_t size[]);
 PackedPar * pstore_pack_create_simple(int ptype, ptrdiff_t size);
-PackedPar * pstore_pack(Par * first, size_t size);
+PackedPar * pstore_pack_node(Node * node);
+void pstore_pack_free(PackedPar * pack);
 
 void pstore_pack_push(PackedPar * pack, ptrdiff_t * cursor, Par * par);
 Par * pstore_pack_get(PackedPar * pack, ptrdiff_t cursor);
 void pstore_pack_sort(PackedPar * pack);
-
 #endif

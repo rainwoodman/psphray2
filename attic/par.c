@@ -36,17 +36,17 @@ PStore * pstore_new(size_t split_limit) {
     return store;
 }
 
-void pstore_free_node(Node * node) {
+static void pstore_free_node0(Node * node) {
     g_slice_free(Node, node);
 }
-void pstore_free_node_r(Node * node) {
+void pstore_free_node(Node * node) {
     int prefix;
     if(node->link[0]) {
         for(prefix = 0; prefix < 8; prefix ++) {
-            pstore_free_node_r(node->link[prefix]);
+            pstore_free_node(node->link[prefix]);
         }
     } else {
-        pstore_free_node(node);
+        pstore_free_node0(node);
     }
 }
 Par * pstore_alloc_par(int ptype) {
@@ -58,19 +58,12 @@ Par * pstore_alloc_par(int ptype) {
 void pstore_free_par(Par * par) {
     g_slice_free1(PTYPE[par->type].nbytes, par);
 }
-void pstore_free_par_chain(Par * head) {
-    Par * q = NULL;
-    for(; head; head = q) {
-        q = head->next;
-        g_slice_free1(PTYPE[head->type].nbytes, head);
-    }
-}
 /**
  * insert a particle at given position to the store, of type ptype
  * returns a pointer to the particle so that the information can be filled
  */
 static void pstore_insert_r(PStore * pstore, Node * node, Par * par, int depth);
-Par * pstore_insert(PStore * pstore, ipos_t ipos[3], int ptype) {
+Par * pstore_insert_par(PStore * pstore, ipos_t ipos[3], int ptype) {
     Par * par = g_slice_alloc0(PTYPE[ptype].nbytes);
     par->ipos[0] = ipos[0];
     par->ipos[1] = ipos[1];
@@ -222,6 +215,12 @@ static void pstore_child_shrunk(Node * node, int prefix) {
 }
 
 
+/**
+ * remove a node from the tree.
+ * the particles in the node are dequeued.
+ * the node is not freed, thus the particles can still be accessed
+ * via the removed node.
+ */
 void pstore_remove_node(PStore * pstore, Node * node) {
     Par * previous_par = pstore_node_previous_par(node);
     Par * next_par = pstore_node_next_par(node);
@@ -249,9 +248,11 @@ void pstore_remove_node(PStore * pstore, Node * node) {
  * remove a particle by pointer ptr,
  * crash if par is not found.
  * par is not freed. free it with par_free
+ *
+ * the particle is detached from the link list.
  * */
 static void pstore_remove_r(PStore * pstore, Node * node, Par * par, int depth);
-void pstore_remove(PStore * pstore, Par * par) {
+void pstore_remove_par(PStore * pstore, Par * par) {
     pstore_remove_r(pstore, pstore->root, par, 0);
     par->next = NULL;
 }
@@ -333,7 +334,7 @@ Par * pstore_node_next_par(Node * node) {
  * return the pointer to a particle at the index-th position
  * */
 static Par * pstore_get_nearby_r(PStore * pstore, Node * node, ptrdiff_t index);
-Par * pstore_get_nearby(PStore * pstore, ptrdiff_t index) {
+Par * pstore_get_nearby_par(PStore * pstore, ptrdiff_t index) {
     return pstore_get_nearby_r(pstore, pstore->root, index);
 }
 static Par * pstore_get_nearby_r(PStore * pstore, Node * node, ptrdiff_t index) {
@@ -414,18 +415,18 @@ Par * pstore_pack_get(PackedPar * pack, ptrdiff_t cursor) {
 }
 
 /**
- * pack particles into a packedpar struct
+ * pack particles in a node into a packedpar struct
  * first points to a link list of particles.
  *
  * the next pointers are invalidated -- it still points to the old next
  * part in the original link list. we keep them in case needed for debugging.
  * 
  */
-PackedPar * pstore_pack(Par * first, size_t size) {
+PackedPar * pstore_pack_node(Node * node){
     ptrdiff_t i = 0;
     ptrdiff_t N[256] = {0};
     Par * par;
-    for(par = first, i = 0; i < size; i++, par = par->next) {
+    for(par = node->first, i = 0; i < node->size; i++, par = par->next) {
         N[par->type] ++;
     }
 
@@ -433,13 +434,17 @@ PackedPar * pstore_pack(Par * first, size_t size) {
     ptrdiff_t * index = pstore_pack_get_index(pack);
     char * ptr = pstore_pack_get_ptr(pack);
     char * q;
-    for(par = first, i = 0, q = ptr; i < size; i++, par = par->next) {
+    for(par = node->first, i = 0, q = ptr; i < node->size; i++, par = par->next) {
         size_t width = PTYPE[par->type].nbytes;
         memcpy(q, par, width);
         index[i] = q - pack->data;
         q += width;
     }
     return pack;
+}
+
+void pstore_pack_free(PackedPar * pack) {
+    g_free(pack);
 }
 
 /* push a par to pack. iter needs to be 0 when function is first called.
@@ -613,6 +618,13 @@ static void pstore_merge_r(PStore * pstore, Node * node) {
             g_slice_free(Node, node->link[prefix]);
             node->link[prefix] = NULL;
         }
+    }
+}
+void pstore_free_par_chain(Par * head) {
+    Par * q = NULL;
+    for(; head; head = q) {
+        q = head->next;
+        g_slice_free1(PTYPE[head->type].nbytes, head);
     }
 }
 #endif

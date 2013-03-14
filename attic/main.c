@@ -78,7 +78,7 @@ void test() {
         ipos[1] = g_random_int_range(0, IPOS_LIMIT);
         ipos[2] = g_random_int_range(0, IPOS_LIMIT);
     //    g_message("inserting %d", i);
-        pstore_insert(pstore, ipos, 0);
+        pstore_insert_par(pstore, ipos, 0);
     }
     for(i = 0; i < NPAR; i++) {
         ipos_t ipos[3];
@@ -86,14 +86,14 @@ void test() {
         ipos[1] = g_random_int_range(0, IPOS_LIMIT);
         ipos[2] = g_random_int_range(0, IPOS_LIMIT);
     //    g_message("inserting %d", i);
-        pstore_insert(pstore, ipos, 1);
+        pstore_insert_par(pstore, ipos, 1);
     }
-    PackedPar * pack = pstore_pack(pstore->root->first, pstore->root->size);
+    PackedPar * pack = pstore_pack_node(pstore->root);
     pstore_pack_sort(pack);
     size_t c1 = 0;
     size_t c2 = 0;
     for(i = 0; i < pstore->root->size; i++) {
-        Par * par = pstore_pack_get(pstore, i);
+        Par * par = pstore_pack_get(pack, i);
         if(par->type == 0) c1 ++;
         if(par->type == 1) c2 ++;
         if(par->next) {
@@ -105,15 +105,15 @@ void test() {
     pstore_check(pstore);
     for(i = 0; i < NPAR; i++) {
         int ind = g_random_int_range(0, pstore->root->size);
-        Par * p = pstore_get_nearby(pstore, ind);
-        pstore_remove(pstore, p);
+        Par * p = pstore_get_nearby_par(pstore, ind);
+        pstore_remove_par(pstore, p);
         pstore_free_par(p);
     }
     pstore_check(pstore);
     Par * p = pstore->root->first;
     g_message(PAR_FMT, PAR_PRINT(p[0])); 
     g_message("total length = %d", g_slist_length(p));
-    pstore_remove(pstore, p);
+    pstore_remove_par(pstore, p);
     g_message("removed length = %d", g_slist_length(p));
     p = pstore->root->first;
     g_message("total length = %d", g_slist_length(p));
