@@ -49,11 +49,6 @@ void pstore_free_node(Node * node) {
         pstore_free_node0(node);
     }
 }
-Par * pstore_alloc_par(int ptype) {
-    Par * par = g_slice_alloc(PTYPE[ptype].nbytes);
-    par->type = ptype;
-    return par;
-}
 
 void pstore_free_par(Par * par) {
     g_slice_free1(PTYPE[par->type].nbytes, par);
@@ -362,6 +357,17 @@ static Par * pstore_get_nearby_r(PStore * pstore, Node * node, ptrdiff_t index) 
 }
 
 
+/* get a pointer that points to the particle offset index table 
+ * the I-th particle starts at
+ *    pstore_pack_get_ptr(pack) + pstore_pack_get_index(pack)[I]
+ * */
+static ptrdiff_t * pstore_pack_get_index(PackedPar * pack) {
+    return (ptrdiff_t *) pack->data;
+}
+/* get a pointer that points to the particle data*/
+static char * pstore_pack_get_ptr(PackedPar * pack) {
+    return (char * ) ((ptrdiff_t *) pack->data + pack->size);
+}
 /**
  * allocate a pack. 
  * each item in size corresponds to the number of particles for that ptype.
@@ -384,26 +390,30 @@ PackedPar * pstore_pack_create_a(ptrdiff_t N[]) {
     pack->nbytes = sizeof(PackedPar) + parbytes + indexbytes;
     return pack;
 }
-PackedPar * pstore_pack_create_simple(int ptype, ptrdiff_t size) {
+
+/*
+ * create a pack for size number of particles of ptype.
+ *
+ * if filled is true, initialize the index so that the pack can be 
+ * immediately accessed by pstore_pack_get. (no need to push particles)
+ * */
+PackedPar * pstore_pack_create_simple(int ptype, ptrdiff_t size, int filled) {
     ptrdiff_t Nsum = size;
     ptrdiff_t indexbytes = Nsum * sizeof(ptrdiff_t);
     size_t parbytes = Nsum * PTYPE[ptype].nbytes;
     PackedPar * pack = g_malloc(sizeof(PackedPar) + parbytes + indexbytes);
     pack->size = Nsum;
     pack->nbytes = sizeof(PackedPar) + parbytes + indexbytes;
+    if(filled) {
+        ptrdiff_t * index = pstore_pack_get_index(pack);
+        char * ptr = pstore_pack_get_ptr(pack);
+        ptrdiff_t i, j;
+        for(i = 0, j = 0; i < Nsum; i++, j += PTYPE[ptype].nbytes) {
+            index[i] = j;
+            ((Par*)(ptr + j))->type = ptype;
+        }
+    }
     return pack;
-}
-
-/* get a pointer that points to the particle offset index table 
- * the I-th particle starts at
- *    pstore_pack_get_ptr(pack) + pstore_pack_get_index(pack)[I]
- * */
-static ptrdiff_t * pstore_pack_get_index(PackedPar * pack) {
-    return (ptrdiff_t *) pack->data;
-}
-/* get a pointer that points to the particle data*/
-static char * pstore_pack_get_ptr(PackedPar * pack) {
-    return (char * ) ((ptrdiff_t *) pack->data + pack->size);
 }
 
 /*
@@ -626,5 +636,10 @@ void pstore_free_par_chain(Par * head) {
         q = head->next;
         g_slice_free1(PTYPE[head->type].nbytes, head);
     }
+}
+Par * pstore_alloc_par(int ptype) {
+    Par * par = g_slice_alloc(PTYPE[ptype].nbytes);
+    par->type = ptype;
+    return par;
 }
 #endif

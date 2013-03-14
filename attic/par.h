@@ -116,7 +116,7 @@ Par * pstore_get_nearby_par(PStore * pstore, ptrdiff_t index);
 
 /* these function allocate/create a PackedPar structure */
 PackedPar * pstore_pack_create_a(ptrdiff_t size[]);
-PackedPar * pstore_pack_create_simple(int ptype, ptrdiff_t size);
+PackedPar * pstore_pack_create_simple(int ptype, ptrdiff_t size, int filled);
 PackedPar * pstore_pack_node(Node * node);
 void pstore_pack_free(PackedPar * pack);
 

@@ -223,15 +223,7 @@ static void snapshot_to_pack(int fid, PackedPar * pack[6]) {
 
     for(int ptype = 0; ptype < 6; ptype++) {
         N[ptype] = h.N[ptype];
-        pack[ptype] = pstore_pack_create_simple(ptype, N[ptype]);
-        Par * par = pstore_alloc_par(ptype);
-        ptrdiff_t i;
-        ptrdiff_t iter = 0;
-        for(i = 0; i < N[ptype]; i++) {
-            pstore_pack_push(pack[ptype], &iter, par);
-        }
-        pstore_free_par(par);
-        g_assert(iter == N[ptype]);
+        pack[ptype] = pstore_pack_create_simple(ptype, N[ptype], TRUE);
     }
 
     p = buffer + 256 + 4 + 4; /* skip header */
@@ -432,7 +424,7 @@ PackedPar * snapshot_read(SnapHeader * h) {
                 pack = packsend;
             } else {
                 g_debug("a pack is rippen and sent to %d", rr);
-                MPI_Send(packsend, packsend->totalbytes, MPI_BYTE, rr, rr, ReaderComm);
+                MPI_Send(packsend, packsend->nbytes, MPI_BYTE, rr, rr, ReaderComm);
                 g_free(packsend);
             }
         }
@@ -442,7 +434,7 @@ PackedPar * snapshot_read(SnapHeader * h) {
         g_assert(fid == fidend);
     } else {
         pack = pstore_pack_create_a(Nlocal); 
-        MPI_Recv(pack, pack->totalbytes, MPI_BYTE, 
+        MPI_Recv(pack, pack->nbytes, MPI_BYTE, 
                     0, ReaderRank, ReaderComm, MPI_STATUS_IGNORE);
         g_debug("%03d received the particle pack", ThisTask);
     }
