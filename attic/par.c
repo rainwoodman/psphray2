@@ -5,7 +5,7 @@
 
 static struct {
     char name[8];
-    size_t elesize; /* sizeof Par struct including additional data */
+    size_t nbytes; /* sizeof Par struct including additional data */
 } PTYPE[256];
 unsigned int PAR_PTYPE_MASK = 0;
 unsigned int PAR_PRIMARY_MASK = 0;
@@ -14,7 +14,7 @@ unsigned int PAR_PRIMARY_MASK = 0;
 void register_ptype(int i, char * name, size_t elesize, int is_primary) {
     strncpy(PTYPE[i].name, name, 8);
     PTYPE[i].name[7] = 0;
-    PTYPE[i].elesize = sizeof(Par) + elesize;
+    PTYPE[i].nbytes= sizeof(Par) + elesize;
     PAR_PTYPE_MASK |= (1 << i);
     if(is_primary) {
         PAR_PRIMARY_MASK |= (1L << i);
@@ -24,11 +24,9 @@ void register_ptype(int i, char * name, size_t elesize, int is_primary) {
 extern inline int ipos_get_prefix(ipos_t ipos[3], int depth);
 extern inline int par_is_primary(Par * par);
 extern inline int ipos_compare(ipos_t a[3], ipos_t b[3]);
-
-size_t ptype_get_elesize(int ptype) {
-    return PTYPE[ptype].elesize;
+size_t par_get_nbytes(Par * par) {
+    return PTYPE[par->type].nbytes;
 }
-
 PStore * pstore_new(size_t split_limit) {
     PStore * store = g_new0(PStore, 1);
     store->root = g_slice_new0(Node);
@@ -52,19 +50,19 @@ void pstore_free_node_r(Node * node) {
     }
 }
 Par * pstore_alloc_par(int ptype) {
-    Par * par = g_slice_alloc(PTYPE[ptype].elesize);
+    Par * par = g_slice_alloc(PTYPE[ptype].nbytes);
     par->type = ptype;
     return par;
 }
 
 void pstore_free_par(Par * par) {
-    g_slice_free1(PTYPE[par->type].elesize, par);
+    g_slice_free1(PTYPE[par->type].nbytes, par);
 }
 void pstore_free_par_chain(Par * head) {
     Par * q = NULL;
     for(; head; head = q) {
         q = head->next;
-        g_slice_free1(PTYPE[head->type].elesize, head);
+        g_slice_free1(PTYPE[head->type].nbytes, head);
     }
 }
 /**
@@ -73,7 +71,7 @@ void pstore_free_par_chain(Par * head) {
  */
 static void pstore_insert_r(PStore * pstore, Node * node, Par * par, int depth);
 Par * pstore_insert(PStore * pstore, ipos_t ipos[3], int ptype) {
-    Par * par = g_slice_alloc0(PTYPE[ptype].elesize);
+    Par * par = g_slice_alloc0(PTYPE[ptype].nbytes);
     par->ipos[0] = ipos[0];
     par->ipos[1] = ipos[1];
     par->ipos[2] = ipos[2];
@@ -376,22 +374,22 @@ PackedPar * pstore_pack_create_a(ptrdiff_t N[]) {
     ptrdiff_t i = 0;
     ptrdiff_t Nsum = 0;
     for(i = 0; i < 256 && N[i] >= 0; i++) {
-        parbytes += PTYPE[i].elesize * N[i];
+        parbytes += PTYPE[i].nbytes * N[i];
         Nsum += N[i];
     }
     indexbytes = Nsum * sizeof(ptrdiff_t);
     PackedPar * pack = g_malloc(sizeof(PackedPar) + parbytes + indexbytes);
     pack->size = Nsum;
-    pack->totalbytes = sizeof(PackedPar) + parbytes + indexbytes;
+    pack->nbytes = sizeof(PackedPar) + parbytes + indexbytes;
     return pack;
 }
 PackedPar * pstore_pack_create_simple(int ptype, ptrdiff_t size) {
     ptrdiff_t Nsum = size;
     ptrdiff_t indexbytes = Nsum * sizeof(ptrdiff_t);
-    size_t parbytes = Nsum * PTYPE[ptype].elesize;
+    size_t parbytes = Nsum * PTYPE[ptype].nbytes;
     PackedPar * pack = g_malloc(sizeof(PackedPar) + parbytes + indexbytes);
     pack->size = Nsum;
-    pack->totalbytes = sizeof(PackedPar) + parbytes + indexbytes;
+    pack->nbytes = sizeof(PackedPar) + parbytes + indexbytes;
     return pack;
 }
 
@@ -436,7 +434,7 @@ PackedPar * pstore_pack(Par * first, size_t size) {
     char * ptr = pstore_pack_get_ptr(pack);
     char * q;
     for(par = first, i = 0, q = ptr; i < size; i++, par = par->next) {
-        size_t width = PTYPE[par->type].elesize;
+        size_t width = PTYPE[par->type].nbytes;
         memcpy(q, par, width);
         index[i] = q - pack->data;
         q += width;
@@ -459,7 +457,7 @@ void pstore_pack_push(PackedPar * pack, ptrdiff_t * cursor, Par * par) {
     ptrdiff_t * index = pstore_pack_get_index(pack);
     if(*cursor == 0) index[0] = 0;
     g_assert(*cursor < pack->size); /* the pack is full!*/
-    size_t width = PTYPE[par->type].elesize;
+    size_t width = PTYPE[par->type].nbytes;
     char * ptr = pstore_pack_get_ptr(pack);
     memcpy(ptr + index[*cursor], par, width);
     if(*cursor < pack->size - 1) {

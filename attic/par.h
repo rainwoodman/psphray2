@@ -105,7 +105,7 @@ Par * pstore_get_nearby(PStore * pstore, ptrdiff_t index);
  * ready for MPI send/recv.
  * */
 typedef struct {
-    size_t totalbytes; /* total size in bytes, including the tailing index and this header */
+    size_t nbytes; /* total size in bytes, including the tailing index and this header */
     size_t size;   /* total number of particles */
     char data[];  
     /* data contains two parts, first a sequence of variable unitsize particles
