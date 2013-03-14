@@ -187,7 +187,7 @@ static real_t read_real(char ** p, int double_precision) {
     return rt;
 }
 static uint64_t read_id(char ** p, int longid) {
-    real_t rt;
+    uint64_t rt;
     if(longid) {
         rt = * (uint64_t*) *p;
         *p += 8;
@@ -419,6 +419,7 @@ PackedPar * snapshot_read(SnapHeader * h) {
                     }
                 }
             }
+            g_assert(iter == packsend->size);
             /* now send packsend to the receiver */
             if(rr == 0) {
                 pack = packsend;
@@ -439,4 +440,16 @@ PackedPar * snapshot_read(SnapHeader * h) {
         g_debug("%03d received the particle pack", ThisTask);
     }
     return pack;
+}
+
+void pack_stat(PackedPar * pack, ptrdiff_t iter) {
+        Par * par;
+        ptrdiff_t i;
+        uint64_t idmin = 0xfffffff, idmax = 0;
+        for(i = 0; i < iter; i++) {
+            Par * par = pstore_pack_get(pack, i);
+            if(par->id > idmax) idmax = par->id;
+            if(par->id < idmin) idmin = par->id;
+        }
+        g_debug("upto %td min %lu max %lu\n", iter, idmin, idmax);
 }
