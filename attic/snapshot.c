@@ -101,7 +101,9 @@ void snapshot_read_header(int fid, SnapHeader * h) {
     h[0].BoxSize = fh[0].boxsize;
     h[0].h = fh[0].h;
     h[0].Nfile = fh[0].Nfiles;
-    h[0].double_precision = fh[0].flag_double;
+    h[0].flag_double= fh[0].flag_double;
+    h[0].flag_cool = fh[0].flag_cool;
+    h[0].flag_sfr = fh[0].flag_sfr;
     g_mapped_file_unref(file);
 }
 
@@ -175,9 +177,9 @@ static void check_block(char **p, int expected) {
         g_error("block inconsistent");
     }
 }
-static real_t read_real(char ** p, int double_precision) {
+static real_t read_real(char ** p, int flag_double) {
     real_t rt;
-    if(double_precision) {
+    if(flag_double) {
         rt = * (double*) *p;
         *p += 8;
     } else {
@@ -201,7 +203,7 @@ static uint64_t read_id(char ** p, int longid) {
 /*
  * Read a snapshot file fid into 6 PackedPar, one per ptype.
  * */
-static void snapshot_to_pack(int fid, PackedPar * pack[6]) {
+static PackedPar * snapshot_to_pack(int fid, int ptype) {
     GError * error = NULL;
     char * buffer = NULL;
     GMappedFile * file = NULL;
@@ -211,7 +213,7 @@ static void snapshot_to_pack(int fid, PackedPar * pack[6]) {
     snapshot_read_header(fid, &h);
 
     char * filename = format_input_filename(CB.SnapNumMajor, fid);
-    g_message("%d (%d/%d on %d) reading %s", ThisTask, ReaderRank, ReaderSize, ReaderColor, filename);
+    g_message("%d (%d/%d on %d) reading %s ptype=%d", ThisTask, ReaderRank, ReaderSize, ReaderColor, filename, ptype);
     file = g_mapped_file_new(filename, FALSE, &error);
     if(!file) g_error("failed to read file %s:%s", filename, error->message);
 
@@ -219,42 +221,56 @@ static void snapshot_to_pack(int fid, PackedPar * pack[6]) {
     g_free(filename);
 
     ptrdiff_t N[6];
-    int ptype;
+    int iptype;
 
-    for(int ptype = 0; ptype < 6; ptype++) {
-        N[ptype] = h.N[ptype];
-        pack[ptype] = pstore_pack_create_simple(ptype, N[ptype], TRUE);
+    for(iptype = 0; iptype < 6; iptype++) {
+        N[iptype] = h.N[iptype];
     }
+
+    PackedPar * pack = pstore_pack_create_simple(ptype, h.N[ptype], TRUE);
 
     p = buffer + 256 + 4 + 4; /* skip header */
     ptrdiff_t i = 0;
     int check;
     if(N[0] + N[1] + N[2] + N[3] + N[4] + N[5] > 0) {
         check = start_block(&p);
-        for(ptype = 0; ptype < 6; ptype++) {
-            for(i = 0; i < N[ptype]; i++) {
-                Par * par = pstore_pack_get(pack[ptype], i);
-                par->ipos[0] = read_real(&p, h.double_precision) / CB.BoxSize * IPOS_LIMIT;
-                par->ipos[1] = read_real(&p, h.double_precision) / CB.BoxSize * IPOS_LIMIT;
-                par->ipos[2] = read_real(&p, h.double_precision) / CB.BoxSize * IPOS_LIMIT;
+        for(iptype = 0; iptype < 6; iptype++) {
+            if(iptype != ptype) {
+                p += (h.flag_double?sizeof(double):sizeof(float)) * N[iptype] * 3;
+                continue;
+            }
+            for(i = 0; i < N[iptype]; i++) {
+                Par * par = pstore_pack_get(pack, i);
+                par->ipos[0] = read_real(&p, h.flag_double) / CB.BoxSize * IPOS_LIMIT;
+                par->ipos[1] = read_real(&p, h.flag_double) / CB.BoxSize * IPOS_LIMIT;
+                par->ipos[2] = read_real(&p, h.flag_double) / CB.BoxSize * IPOS_LIMIT;
             }
         }
         check_block(&p, check);
         check = start_block(&p);
-        for(ptype = 0; ptype < 6; ptype++) {
-            for(i = 0; i < N[ptype]; i++) {
-                Par * par = pstore_pack_get(pack[ptype], i);
-                par->vel[0] = read_real(&p, h.double_precision);
-                par->vel[1] = read_real(&p, h.double_precision);
-                par->vel[2] = read_real(&p, h.double_precision);
+        for(iptype = 0; iptype < 6; iptype++) {
+            if(iptype != ptype) {
+                p += (h.flag_double?sizeof(double):sizeof(float)) * N[iptype] * 3;
+                continue;
+            }
+            for(i = 0; i < N[iptype]; i++) {
+                Par * par = pstore_pack_get(pack, i);
+                par->vel[0] = read_real(&p, h.flag_double);
+                par->vel[1] = read_real(&p, h.flag_double);
+                par->vel[2] = read_real(&p, h.flag_double);
             }
         }
         check_block(&p, check);
         check = start_block(&p);
-        for(ptype = 0; ptype < 6; ptype++) {
-            for(i = 0; i < N[ptype]; i++) {
-                Par * par = pstore_pack_get(pack[ptype], i);
-                par->id = read_id(&p, CB.IDByteSize == 8);
+        int longid = check / (N[0] + N[1] + N[2] + N[3] + N[4] + N[5]) == sizeof(int64_t);
+        for(iptype = 0; iptype < 6; iptype++) {
+            if(iptype != ptype) {
+                p += (longid?sizeof(int64_t):sizeof(int32_t)) * N[iptype];
+                continue;
+            }
+            for(i = 0; i < N[iptype]; i++) {
+                Par * par = pstore_pack_get(pack, i);
+                par->id = read_id(&p, longid);
             }
         }
         check_block(&p, check);
@@ -268,24 +284,35 @@ static void snapshot_to_pack(int fid, PackedPar * pack[6]) {
      +  N[5] * (h.masstab[5] != 0)
     ) {
         check = start_block(&p);
-        for(ptype = 0; ptype < 6; ptype ++) {
-            for(i = 0; i < N[ptype]; i++) {
-                Par * par = pstore_pack_get(pack[ptype], i);
-                if(h.masstab[ptype] == 0) {
-                    par->mass = read_real(&p, h.double_precision);
+        for(iptype = 0; iptype < 6; iptype ++) {
+            if(iptype != ptype) {
+                if(h.masstab[iptype] == 0) {
+                    p += (h.flag_double?sizeof(double):sizeof(float)) * N[iptype];
+                }
+                continue;
+            }
+            for(i = 0; i < N[iptype]; i++) {
+                Par * par = pstore_pack_get(pack, i);
+                if(h.masstab[iptype] == 0) {
+                    par->mass = read_real(&p, h.flag_double);
                 } else {
-                    par->mass = h.masstab[ptype];
+                    par->mass = h.masstab[iptype];
                 }
             }
         }
         check_block(&p, check);
     }
 
-#define READ(converter, element, ptype) \
-    for(i = 0; i < N[ptype]; i++) {\
-        Par * par = pstore_pack_get(pack[ptype], i); \
-        converter(par)->element = read_real(&p, h.double_precision); \
+#define READ(converter, element, iptype) \
+    if(iptype == ptype) { \
+        for(i = 0; i < N[iptype]; i++) {\
+            Par * par = pstore_pack_get(pack, i); \
+            converter(par)->element = read_real(&p, h.flag_double); \
+        } \
+    } else { \
+        p += (h.flag_double?sizeof(double):sizeof(float)) * N[iptype]; \
     }
+
     if(N[0] > 0) {
         check = start_block(&p);
         READ(AS_GAS, ie, 0);
@@ -293,29 +320,37 @@ static void snapshot_to_pack(int fid, PackedPar * pack[6]) {
         check = start_block(&p);
         READ(AS_GAS, rho, 0);
         check_block(&p, check);
-        check = start_block(&p);
-        READ(AS_GAS, ye, 0);
-        check_block(&p, check);
-        check = start_block(&p);
-        READ(AS_GAS, xHI, 0);
-        check_block(&p, check);
+        if(h.flag_cool) {
+            check = start_block(&p);
+            READ(AS_GAS, ye, 0);
+            check_block(&p, check);
+            check = start_block(&p);
+            READ(AS_GAS, xHI, 0);
+            check_block(&p, check);
+        }
         check = start_block(&p);
         READ(AS_GAS, sml, 0);
         check_block(&p, check);
-        check = start_block(&p);
-        READ(AS_GAS, sfr, 0);
-        check_block(&p, check);
+        if(h.flag_sfr) {
+            check = start_block(&p);
+            READ(AS_GAS, sfr, 0);
+            check_block(&p, check);
+        }
     }
     if(N[4] > 0) {
-        check = start_block(&p);
-        READ(AS_STAR, sft, 4);
-        check_block(&p, check);
+        if(h.flag_sfr) {
+            check = start_block(&p);
+            READ(AS_STAR, sft, 4);
+            check_block(&p, check);
+        }
     }
     if(N[0] + N[4] > 0) {
-        check = start_block(&p);
-        READ(AS_GAS, met, 0);
-        READ(AS_STAR, met, 4);
-        check_block(&p, check);
+        if(h.flag_sfr) {
+            check = start_block(&p);
+            READ(AS_GAS, met, 0);
+            READ(AS_STAR, met, 4);
+            check_block(&p, check);
+        }
     }
     if(N[5] > 0) {
         check = start_block(&p);
@@ -326,6 +361,7 @@ static void snapshot_to_pack(int fid, PackedPar * pack[6]) {
         check_block(&p, check);
     }
     g_mapped_file_unref(file);
+    return pack;
 }
 
 
@@ -360,7 +396,7 @@ PackedPar * snapshot_read(SnapHeader * h) {
     PackedPar * pack = NULL;
 
     LEADERONLY {
-        int fid = fidstart;
+        int fid[6] = {fidstart, fidstart, fidstart, fidstart, fidstart, fidstart};
         GQueue queue[6] = {
                 G_QUEUE_INIT, 
                 G_QUEUE_INIT, 
@@ -385,23 +421,16 @@ PackedPar * snapshot_read(SnapHeader * h) {
                 while(j[ptype] < Nsend[ptype]) {
                     qe = g_queue_pop_head(&queue[ptype]);
                     while(qe == NULL) {
-                        PackedPar * packread[6];
-                        snapshot_to_pack(fid, packread);
-                        fid ++;
-                        int i;
-                        for(i = 0; i < 6; i ++) {
-                            if(packread[i]->size == 0) {
-                                g_free(packread[i]);
-                                continue;
-                            }
-                            struct queue_element * nqe = g_slice_new(struct queue_element);
-                            nqe->pack = packread[i];
-                            nqe->first = 0;
-                            g_queue_push_tail(&queue[i], nqe);
-                            g_debug("input queue of ptype %d: length = %d;\n",
-                                i, 
-                                g_queue_get_length(&queue[i]));
+                        PackedPar * packread = snapshot_to_pack(fid[ptype], ptype);
+                        fid[ptype] ++;
+                        if(packread->size == 0) {
+                            g_free(packread);
+                            continue;
                         }
+                        struct queue_element * nqe = g_slice_new(struct queue_element);
+                        nqe->pack = packread;
+                        nqe->first = 0;
+                        g_queue_push_tail(&queue[ptype], nqe);
                         qe = g_queue_pop_head(&queue[ptype]);
                     }
                     for(;
@@ -431,8 +460,11 @@ PackedPar * snapshot_read(SnapHeader * h) {
         }
         for(ptype = 0; ptype < 6; ptype++) {
             g_assert(g_queue_is_empty(&queue[ptype]));
+            /* this is less than because it is possible some of the snapshot files
+             * do not contain particles of this type in which case there is no need
+             * to reopen these files  */
+            g_assert(fid[ptype] <= fidend);
         }
-        g_assert(fid == fidend);
     } else {
         pack = pstore_pack_create_a(Nlocal); 
         MPI_Recv(pack, pack->nbytes, MPI_BYTE, 

@@ -5,8 +5,10 @@ typedef struct {
     double h;
     int N[6];
     int Nfile;
+    unsigned int flag_double:1;
+    unsigned int flag_cool:1;
+    unsigned int flag_sfr:1;
     double BoxSize;
-    int double_precision;
     double masstab[6];
 } SnapHeader;
 

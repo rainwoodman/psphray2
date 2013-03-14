@@ -57,7 +57,7 @@ int main(int argc, char * argv[]) {
             if(par->id > idmax) idmax = par->id;
             if(par->id < idmin) idmin = par->id;
         }
-        g_message("%03d: Ntot = %ld idmax = %ld, idmin = %ld",
+        g_message("%03d: Ntot = %td idmax = %lu, idmin = %lu",
                 ThisTask, pack->size, idmax, idmin);
         g_free(pack);
     }
