@@ -388,6 +388,7 @@ PackedPar * pstore_pack_create_a(ptrdiff_t N[]) {
     PackedPar * pack = g_malloc(sizeof(PackedPar) + parbytes + indexbytes);
     pack->size = Nsum;
     pack->nbytes = sizeof(PackedPar) + parbytes + indexbytes;
+    g_debug("allocated %td bytes for parpack", pack->nbytes);
     return pack;
 }
 
@@ -413,6 +414,7 @@ PackedPar * pstore_pack_create_simple(int ptype, ptrdiff_t size, int filled) {
             ((Par*)(ptr + j))->type = ptype;
         }
     }
+    g_debug("allocated %td bytes for simple parpack, ptype=%d", pack->nbytes, ptype);
     return pack;
 }
 

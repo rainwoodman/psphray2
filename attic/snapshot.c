@@ -406,6 +406,7 @@ PackedPar * snapshot_read(SnapHeader * h) {
                 G_QUEUE_INIT
         };
         int rr = 0;
+        size_t totalpacks = 0;
         for(rr = 0; rr < ReaderSize; rr++) {
             ptrdiff_t Nsend[7];
             for(ptype = 0; ptype < 6; ptype++) {
@@ -422,9 +423,11 @@ PackedPar * snapshot_read(SnapHeader * h) {
                     qe = g_queue_pop_head(&queue[ptype]);
                     while(qe == NULL) {
                         PackedPar * packread = snapshot_to_pack(fid[ptype], ptype);
+                        totalpacks ++;
                         fid[ptype] ++;
                         if(packread->size == 0) {
                             g_free(packread);
+                            totalpacks --;
                             continue;
                         }
                         struct queue_element * nqe = g_slice_new(struct queue_element);
@@ -441,6 +444,7 @@ PackedPar * snapshot_read(SnapHeader * h) {
                     }
                     if(qe->first == qe->pack->size) {
                         g_free(qe->pack);
+                        totalpacks --;
                         g_slice_free(struct queue_element, qe);
                         /* this chunk has been used up, need to read a new file */
                     } else {
@@ -464,6 +468,7 @@ PackedPar * snapshot_read(SnapHeader * h) {
              * do not contain particles of this type in which case there is no need
              * to reopen these files  */
             g_assert(fid[ptype] <= fidend);
+            g_assert(totalpacks == 0);
         }
     } else {
         pack = pstore_pack_create_a(Nlocal); 
