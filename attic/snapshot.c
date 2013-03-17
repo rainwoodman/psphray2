@@ -119,7 +119,7 @@ static void snapshot_prepare(SnapHeader * h, ptrdiff_t Nglobal[6], int * fidstar
         }
     }
     MPI_Bcast(h, sizeof(SnapHeader), MPI_BYTE, 0, MPI_COMM_WORLD);
-
+    CB.BoxSize = h->BoxSize;
     Nfile = h->Nfile;
     if(CB.NReader == 0) CB.NReader = NTask;
     if(CB.NReader > NTask) {
@@ -423,6 +423,7 @@ PackedPar * snapshot_read(SnapHeader * h) {
                     qe = g_queue_pop_head(&queue[ptype]);
                     while(qe == NULL) {
                         PackedPar * packread = snapshot_to_pack(fid[ptype], ptype);
+                        pack_stat(packread, packread->size);
                         totalpacks ++;
                         fid[ptype] ++;
                         if(packread->size == 0) {
@@ -483,10 +484,23 @@ void pack_stat(PackedPar * pack, ptrdiff_t iter) {
         Par * par;
         ptrdiff_t i;
         uint64_t idmin = 0xfffffff, idmax = 0;
+        ipos_t posmin[3] = {IPOS_LIMIT - 1, IPOS_LIMIT - 1, IPOS_LIMIT - 1} ,
+               posmax[3] = {0, 0, 0};
         for(i = 0; i < iter; i++) {
             Par * par = pstore_pack_get(pack, i);
             if(par->id > idmax) idmax = par->id;
             if(par->id < idmin) idmin = par->id;
+            if(ipos_compare(par->ipos, posmax) > 0) {
+                posmax[0] = par->ipos[0];
+                posmax[1] = par->ipos[1];
+                posmax[2] = par->ipos[2];
+            }
+            if(ipos_compare(par->ipos, posmin) < 0) {
+                posmin[0] = par->ipos[0];
+                posmin[1] = par->ipos[1];
+                posmin[2] = par->ipos[2];
+            }
         }
-        g_debug("upto %td min %lu max %lu\n", iter, idmin, idmax);
+        char * pmin = ipos_str(posmin), *pmax = ipos_str(posmax);
+        g_debug("upto %td min %lu max %lu, %s %s\n", iter, idmin, idmax, pmin, pmax);
 }

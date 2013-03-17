@@ -24,6 +24,11 @@ void register_ptype(int i, char * name, size_t elesize, int is_primary) {
 extern inline int ipos_get_prefix(ipos_t ipos[3], int depth);
 extern inline int par_is_primary(Par * par);
 extern inline int ipos_compare(ipos_t a[3], ipos_t b[3]);
+extern inline void ipos_set_prefix(ipos_t ipos[3], int depth, int prefix);
+extern inline void ipos_bisect(ipos_t a[3], ipos_t b[3], ipos_t c[3]);
+extern inline void ipos_immediate_next(ipos_t a[3], ipos_t next[3]);
+
+
 size_t par_get_nbytes(Par * par) {
     return PTYPE[par->type].nbytes;
 }
@@ -434,7 +439,7 @@ Par * pstore_pack_get(PackedPar * pack, ptrdiff_t cursor) {
  * part in the original link list. we keep them in case needed for debugging.
  * 
  */
-PackedPar * pstore_pack_node(Node * node){
+PackedPar * pstore_pack_create_from_node(Node * node){
     ptrdiff_t i = 0;
     ptrdiff_t N[256] = {0};
     Par * par;
@@ -449,7 +454,7 @@ PackedPar * pstore_pack_node(Node * node){
     for(par = node->first, i = 0, q = ptr; i < node->size; i++, par = par->next) {
         size_t width = PTYPE[par->type].nbytes;
         memcpy(q, par, width);
-        index[i] = q - pack->data;
+        index[i] = q - ptr;
         q += width;
     }
     return pack;
@@ -497,72 +502,17 @@ void pstore_pack_sort(PackedPar * pack) {
                 (GCompareDataFunc) pstore_pack_sort_compare_func, pack);
 }
 
-static void pstore_check_r(PStore * pstore, Node * node, int depth, ipos_t x, ipos_t y, ipos_t z);
-void pstore_check(PStore * pstore) {
-    pstore_check_r(pstore, pstore->root, 0, 0, 0, 0);
-}
-
-static void pstore_check_r(PStore * pstore, Node * node, int depth, ipos_t x, ipos_t y, ipos_t z) {
-    ipos_t width = 1 << (IPOS_NBITS - depth);
-    ipos_t m = 1 << (IPOS_NBITS - depth - 1);
-    if(node->last) {
-        g_assert(node->last->next == pstore_node_next_par(node));
+ptrdiff_t pstore_pack_searchsorted_left(PackedPar * pack, ipos_t a[3]) {
+    ptrdiff_t left = 0, right = pack->size, mid;
+    while(right > left) {
+        mid = left + ((right - left) >> 1);
+        if(ipos_compare(pstore_pack_get(pack, mid)->ipos, a) < 0) {
+            left = mid + 1;
+        } else {
+            right = mid;
+        }
     }
-    if(node->link[0]) {
-        int prefix;
-        for(prefix = 0; prefix < 8; prefix++) {
-            if(prefix < node->first_nonempty_child)
-                g_assert(node->link[prefix]->size == 0);
-            if(prefix > node->last_nonempty_child)
-                g_assert(node->link[prefix]->size == 0);
-            if(prefix == node->first_nonempty_child)
-                g_assert(node->link[prefix]->size > 0);
-            if(prefix == node->last_nonempty_child)
-                g_assert(node->link[prefix]->size > 0);
-            g_assert(node->link[prefix]);
-        }
-        pstore_check_r(pstore, node->link[0], depth + 1, x, y, z);
-        pstore_check_r(pstore, node->link[1], depth + 1, x + m, y, z);
-        pstore_check_r(pstore, node->link[2], depth + 1, x, y + m, z);
-        pstore_check_r(pstore, node->link[3], depth + 1, x + m, y + m, z);
-        pstore_check_r(pstore, node->link[4], depth + 1, x, y, z + m);
-        pstore_check_r(pstore, node->link[5], depth + 1, x + m, y, z + m);
-        pstore_check_r(pstore, node->link[6], depth + 1, x, y + m, z + m);
-        pstore_check_r(pstore, node->link[7], depth + 1, x + m, y + m, z + m);
-    } else {
-        int prefix;
-        for(prefix = 0; prefix < 8; prefix++) {
-            g_assert(node->link[prefix] == NULL);
-        }
-        g_assert(node->primary_size <= pstore->split_limit);
-        Par * par = node->first;
-        int i;
-        if(node->size > 0) {
-            g_assert(node->first != NULL);
-            g_assert(node->last != NULL);
-            Par * prev = pstore_node_previous_par(node);
-            if(prev)
-                g_assert(prev->next == node->first);
-            Par * next = pstore_node_next_par(node);
-            g_assert(node->last->next == next);
-        }
-        size_t pc = 0;
-        for(i = 0; i < node->size; i++) {
-            g_assert(par != NULL);
-            pc += par_is_primary(par);
-            if(i == node->size - 1) {
-                g_assert(par == node->last);
-            }
-            g_assert(x <= par->ipos[0]);
-            g_assert(y <= par->ipos[1]);
-            g_assert(z <= par->ipos[2]);
-            g_assert(x + width > par->ipos[0]);
-            g_assert(y + width > par->ipos[1]);
-            g_assert(z + width > par->ipos[2]);
-            par = par->next;
-        }
-        g_assert(pc == node->primary_size);
-    }
+    return left;
 }
 
 #if 0

@@ -6,14 +6,15 @@
 int ThisTask;
 int NTask;
 int PrevTask, NextTask;
+MPI_Datatype MPI_PTRDIFF;
 
-#if 0
 void abort() {
+    void exit(int);
     MPI_Abort(MPI_COMM_WORLD, 1);
     /* shut up the compiler */
     exit(1);
 }
-#endif
+
 void print_handler(const gchar * string) {
     fputs(string, stdout);
     fflush(stdout);
@@ -36,7 +37,15 @@ static void log_handler
 void mpiu_module_init() {
     g_log_set_default_handler(log_handler, NULL);
     g_set_print_handler(print_handler);
-
+    if(sizeof(ptrdiff_t) == sizeof(long long)) {
+        MPI_PTRDIFF = MPI_LONG_LONG;
+    } else if(sizeof(ptrdiff_t) == sizeof(long)) {
+        MPI_PTRDIFF = MPI_LONG;
+    } else if(sizeof(ptrdiff_t) == sizeof(int)) {
+        MPI_PTRDIFF = MPI_INT;
+    } else {
+        g_assert_not_reached();
+    }
     MPI_Comm_rank(MPI_COMM_WORLD, &ThisTask);
     MPI_Comm_size(MPI_COMM_WORLD, &NTask);
     PrevTask = (ThisTask - 1 + NTask) % NTask,

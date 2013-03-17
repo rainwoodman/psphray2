@@ -52,73 +52,34 @@ int main(int argc, char * argv[]) {
         CB.a = header.a;
         ptrdiff_t i;
         uint64_t idmin = 0xfffffff, idmax = 0;
+        ipos_t posmin[3] = {IPOS_LIMIT - 1, IPOS_LIMIT - 1, IPOS_LIMIT - 1} ,
+               posmax[3] = {0, 0, 0};
         for(i = 0; i < pack->size; i++) {
             Par * par = pstore_pack_get(pack, i);
             if(par->id > idmax) idmax = par->id;
             if(par->id < idmin) idmin = par->id;
+            if(ipos_compare(par->ipos, posmax) > 0) {
+                posmax[0] = par->ipos[0];
+                posmax[1] = par->ipos[1];
+                posmax[2] = par->ipos[2];
+            }
+            if(ipos_compare(par->ipos, posmin) < 0) {
+                posmin[0] = par->ipos[0];
+                posmin[1] = par->ipos[1];
+                posmin[2] = par->ipos[2];
+            }
         }
-        g_message("%03d: Ntot = %td idmax = %lu, idmin = %lu",
-                ThisTask, pack->size, idmax, idmin);
+        char * pmin = ipos_str(posmin), *pmax = ipos_str(posmax);
+        g_message("%03d: Ntot = %td idmax = %lu, idmin = %lu"
+                "posmin = %s posmax = %s",
+                ThisTask, pack->size, idmax, idmin,pmin, pmax
+                );
+        domain(pack);
         g_free(pack);
     }
     g_mem_profile();
     //g_slice_debug_tree_statistics();
     MPI_Finalize();
     return 0;
-}
-
-void test() {
-    PStore * pstore = pstore_new(4);
-    int i;
-    g_random_set_seed(0);
-    int NPAR = 100000;
-    for(i = 0; i < NPAR; i++) {
-        ipos_t ipos[3];
-        ipos[0] = g_random_int_range(0, IPOS_LIMIT);
-        ipos[1] = g_random_int_range(0, IPOS_LIMIT);
-        ipos[2] = g_random_int_range(0, IPOS_LIMIT);
-    //    g_message("inserting %d", i);
-        pstore_insert_par(pstore, ipos, 0);
-    }
-    for(i = 0; i < NPAR; i++) {
-        ipos_t ipos[3];
-        ipos[0] = g_random_int_range(0, IPOS_LIMIT);
-        ipos[1] = g_random_int_range(0, IPOS_LIMIT);
-        ipos[2] = g_random_int_range(0, IPOS_LIMIT);
-    //    g_message("inserting %d", i);
-        pstore_insert_par(pstore, ipos, 1);
-    }
-    PackedPar * pack = pstore_pack_node(pstore->root);
-    pstore_pack_sort(pack);
-    size_t c1 = 0;
-    size_t c2 = 0;
-    for(i = 0; i < pstore->root->size; i++) {
-        Par * par = pstore_pack_get(pack, i);
-        if(par->type == 0) c1 ++;
-        if(par->type == 1) c2 ++;
-        if(par->next) {
-            g_assert(ipos_compare(par->ipos, par->next->ipos) <= 0);
-        }
-    }
-    g_assert(c1 == NPAR);
-    g_assert(c2 == NPAR);
-    pstore_check(pstore);
-    for(i = 0; i < NPAR; i++) {
-        int ind = g_random_int_range(0, pstore->root->size);
-        Par * p = pstore_get_nearby_par(pstore, ind);
-        pstore_remove_par(pstore, p);
-        pstore_free_par(p);
-    }
-    pstore_check(pstore);
-    Par * p = pstore->root->first;
-    g_message(PAR_FMT, PAR_PRINT(p[0])); 
-    g_message("total length = %d", g_slist_length(p));
-    pstore_remove_par(pstore, p);
-    g_message("removed length = %d", g_slist_length(p));
-    p = pstore->root->first;
-    g_message("total length = %d", g_slist_length(p));
-    g_message(PAR_FMT, PAR_PRINT(p[0])); 
-
-
 }
 
