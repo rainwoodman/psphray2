@@ -9,8 +9,14 @@
  * */
 static void domain_stage_one_distribute(PackedPar ** pack);
 
-void domain(PackedPar ** pack) {
-    domain_stage_one_distribute(pack);
+void domain(PackedPar * pack) {
+    domain_stage_one_distribute(&pack);
+
+    PStore * pstore = pstore_new(128);
+    pstore_insert_pack(pstore, pack);
+    pstore_pack_free(pack);
+    MPI_Barrier(MPI_COMM_WORLD);
+    g_message("%03d build tree", ThisTask);
 }
 
 /**

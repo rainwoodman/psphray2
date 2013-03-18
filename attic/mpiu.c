@@ -8,13 +8,14 @@ int NTask;
 int PrevTask, NextTask;
 MPI_Datatype MPI_PTRDIFF;
 
+#if 0
 void abort() {
     void exit(int);
     MPI_Abort(MPI_COMM_WORLD, 1);
     /* shut up the compiler */
     exit(1);
 }
-
+#endif
 void print_handler(const gchar * string) {
     fputs(string, stdout);
     fflush(stdout);

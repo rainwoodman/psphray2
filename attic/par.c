@@ -42,7 +42,6 @@ PStore * pstore_new(size_t split_limit) {
     store->depth_limit = IPOS_NBITS - 1;
     return store;
 }
-
 static void pstore_free_node0(Node * node) {
     g_slice_free(Node, node);
 }
@@ -174,6 +173,14 @@ static void pstore_insert_r(PStore * pstore, Node * node, Par * par, int depth) 
     }
 }
 
+void pstore_insert_pack(PStore * pstore, PackedPar * pack) {
+    ptrdiff_t i;
+    for(i = 0; i < pack->size; i++) {
+        Par * par = pstore_pack_get(pack, i);
+        Par * par2 = pstore_insert_par(pstore, par->ipos, par->type);
+        memcpy(par2, par, PTYPE[par->type].nbytes);
+    }
+}
 /* this function is called when the size of child at prefix
  * has shrunk.
  * we first need to update first_nonempty_child and last_nonempty_child.

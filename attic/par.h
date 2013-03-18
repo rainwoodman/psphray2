@@ -157,9 +157,9 @@ void register_ptype(int ptype, char * name, size_t elesize, int is_primary);
 
 /* these functions create /allocate a pstore */
 PStore * pstore_new(size_t split_limit);
-PStore * pstore_unpack(PackedPar * pack);
 
 Par * pstore_insert_par(PStore * pstore, ipos_t ipos[3], int ptype);
+void pstore_insert_pack(PStore * pstore, PackedPar * pack);
 void pstore_remove_par(PStore * pstore, Par * par);
 void pstore_free_par(Par * par);
 void pstore_remove_node(PStore * pstore, Node * node);
