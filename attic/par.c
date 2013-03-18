@@ -7,6 +7,8 @@ static struct {
     char name[8];
     size_t nbytes; /* sizeof Par struct including additional data */
 } PTYPE[256];
+ptrdiff_t PSTORE_PACK_COUNT = 0;
+ptrdiff_t PSTORE_PACK_COUNT_SAVE = 0;
 unsigned int PAR_PTYPE_MASK = 0;
 unsigned int PAR_PRIMARY_MASK = 0;
 /* register a ptype. elesize is the size of extra storage, which 
@@ -373,6 +375,18 @@ static ptrdiff_t * pstore_pack_get_index(PackedPar * pack) {
 static char * pstore_pack_get_ptr(PackedPar * pack) {
     return (char * ) ((ptrdiff_t *) pack->data + pack->size);
 }
+
+PackedPar * pstore_pack_create_direct(ptrdiff_t size, ptrdiff_t parbytes) {
+    size_t indexbytes = size * sizeof(ptrdiff_t);
+    PackedPar * pack = g_malloc(sizeof(PackedPar) + parbytes + indexbytes);
+    pack->size = size;
+    pack->nbytes = sizeof(PackedPar) + parbytes + indexbytes;
+    pack->parbytes = parbytes;
+    //g_debug("allocated %td bytes for parpack", pack->nbytes);
+    PSTORE_PACK_COUNT ++;
+    return pack;
+
+}
 /**
  * allocate a pack. 
  * each item in size corresponds to the number of particles for that ptype.
@@ -382,19 +396,13 @@ static char * pstore_pack_get_ptr(PackedPar * pack) {
  */
 PackedPar * pstore_pack_create_a(ptrdiff_t N[]) {
     size_t parbytes = 0;
-    size_t indexbytes = 0;
     ptrdiff_t i = 0;
     ptrdiff_t Nsum = 0;
     for(i = 0; i < 256 && N[i] >= 0; i++) {
         parbytes += PTYPE[i].nbytes * N[i];
         Nsum += N[i];
     }
-    indexbytes = Nsum * sizeof(ptrdiff_t);
-    PackedPar * pack = g_malloc(sizeof(PackedPar) + parbytes + indexbytes);
-    pack->size = Nsum;
-    pack->nbytes = sizeof(PackedPar) + parbytes + indexbytes;
-    g_debug("allocated %td bytes for parpack", pack->nbytes);
-    return pack;
+    return pstore_pack_create_direct(Nsum, parbytes);
 }
 
 /*
@@ -405,11 +413,8 @@ PackedPar * pstore_pack_create_a(ptrdiff_t N[]) {
  * */
 PackedPar * pstore_pack_create_simple(int ptype, ptrdiff_t size, int filled) {
     ptrdiff_t Nsum = size;
-    ptrdiff_t indexbytes = Nsum * sizeof(ptrdiff_t);
     size_t parbytes = Nsum * PTYPE[ptype].nbytes;
-    PackedPar * pack = g_malloc(sizeof(PackedPar) + parbytes + indexbytes);
-    pack->size = Nsum;
-    pack->nbytes = sizeof(PackedPar) + parbytes + indexbytes;
+    PackedPar * pack = pstore_pack_create_direct(Nsum, parbytes);
     if(filled) {
         ptrdiff_t * index = pstore_pack_get_index(pack);
         char * ptr = pstore_pack_get_ptr(pack);
@@ -419,7 +424,6 @@ PackedPar * pstore_pack_create_simple(int ptype, ptrdiff_t size, int filled) {
             ((Par*)(ptr + j))->type = ptype;
         }
     }
-    g_debug("allocated %td bytes for simple parpack, ptype=%d", pack->nbytes, ptype);
     return pack;
 }
 
@@ -459,9 +463,34 @@ PackedPar * pstore_pack_create_from_node(Node * node){
     }
     return pack;
 }
+/*
+ * create a new pack by selecting particles in the pack.
+ * */
+PackedPar * pstore_pack_create_from_selection(PackedPar * from, ptrdiff_t start, ptrdiff_t end) {
+    ptrdiff_t i = 0, j = 0;
+    ptrdiff_t N[256] = {0};
+    for(j = start; j < end; j++) {
+        Par * par = pstore_pack_get(from, j);
+        N[par->type] ++;
+    }
+    PackedPar * pack = pstore_pack_create_a(N);
+    g_assert(pack->size == end - start);
+    ptrdiff_t * index = pstore_pack_get_index(pack);
+    char * ptr = pstore_pack_get_ptr(pack);
+    char * q;
+    for(j = start, i = 0, q = ptr; j < end; i++, j++) {
+        Par * par = pstore_pack_get(from, j);
+        size_t width = PTYPE[par->type].nbytes;
+        memcpy(q, par, width);
+        index[i] = q - ptr;
+        q += width;
+    }
+    return pack;
+}
 
 void pstore_pack_free(PackedPar * pack) {
     g_free(pack);
+    PSTORE_PACK_COUNT --;
 }
 
 /* push a par to pack. iter needs to be 0 when function is first called.

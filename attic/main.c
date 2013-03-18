@@ -74,8 +74,8 @@ int main(int argc, char * argv[]) {
                 "posmin = %s posmax = %s",
                 ThisTask, pack->size, idmax, idmin,pmin, pmax
                 );
-        domain(pack);
-        g_free(pack);
+        domain(&pack);
+        pstore_pack_free(pack);
     }
     g_mem_profile();
     //g_slice_debug_tree_statistics();

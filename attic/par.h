@@ -85,6 +85,7 @@ typedef struct {
 typedef struct {
     size_t nbytes; /* total size in bytes, including the tailing index and this header */
     size_t size;   /* total number of particles */
+    size_t parbytes;   /* total amount of memory used to store particles */
     char data[];  
     /* data contains two parts, first a sequence of variable unitsize particles
      * then an index that points to the starting of each particles   */
@@ -169,11 +170,23 @@ Par * pstore_get_nearby_par(PStore * pstore, ptrdiff_t index);
 
 
 /* these function allocate/create a PackedPar structure */
-PackedPar * pstore_pack_create_a(ptrdiff_t size[]);
+PackedPar * pstore_pack_create_direct(ptrdiff_t size, ptrdiff_t parbytes);
+PackedPar * pstore_pack_create_a(ptrdiff_t N[]);
 PackedPar * pstore_pack_create_simple(int ptype, ptrdiff_t size, int filled);
 PackedPar * pstore_pack_create_from_node(Node * node);
+PackedPar * pstore_pack_create_from_selection(PackedPar * from, ptrdiff_t start, ptrdiff_t end);
 void pstore_pack_free(PackedPar * pack);
 
+inline void pstore_pack_leak_check_start() {
+    extern ptrdiff_t PSTORE_PACK_COUNT;
+    extern ptrdiff_t PSTORE_PACK_COUNT_SAVE;
+    PSTORE_PACK_COUNT_SAVE = PSTORE_PACK_COUNT;
+}
+inline void pstore_pack_leak_check_end() {
+    extern ptrdiff_t PSTORE_PACK_COUNT;
+    extern ptrdiff_t PSTORE_PACK_COUNT_SAVE;
+    g_assert(PSTORE_PACK_COUNT_SAVE == PSTORE_PACK_COUNT);
+}
 void pstore_pack_push(PackedPar * pack, ptrdiff_t * cursor, Par * par);
 Par * pstore_pack_get(PackedPar * pack, ptrdiff_t cursor);
 void pstore_pack_sort(PackedPar * pack);

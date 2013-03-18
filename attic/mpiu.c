@@ -72,4 +72,3 @@ void mpiu_bcast_string(char ** string) {
         MPI_Bcast(string[0], len + 1, MPI_BYTE, 0, MPI_COMM_WORLD);
     }
 }
-

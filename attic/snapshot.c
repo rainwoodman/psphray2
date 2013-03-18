@@ -157,7 +157,6 @@ static void snapshot_prepare(SnapHeader * h, ptrdiff_t Nglobal[6], int * fidstar
             for(ptype = 0; ptype < 6; ptype++) {
                 Nglobal[ptype] += h.N[ptype];
             }
-            g_debug("fid %d has Ngas %ld", fid, Nglobal[0]);
         }
     }
     MPI_Bcast(Nglobal, 6, MPI_LONG, 0, ReaderComm);
@@ -423,7 +422,9 @@ PackedPar * snapshot_read(SnapHeader * h) {
                     qe = g_queue_pop_head(&queue[ptype]);
                     while(qe == NULL) {
                         PackedPar * packread = snapshot_to_pack(fid[ptype], ptype);
+#if 0
                         pack_stat(packread, packread->size);
+#endif
                         totalpacks ++;
                         fid[ptype] ++;
                         if(packread->size == 0) {

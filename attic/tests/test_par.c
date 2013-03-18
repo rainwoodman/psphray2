@@ -46,13 +46,19 @@ void test_pack() {
     PackedPar * pack = pstore_pack_create_from_node(pstore->root);
     g_message("sorting");
     pstore_pack_sort(pack);
+    PackedPar * sel = pstore_pack_create_from_selection(pack, 0, pack->size);
     for(i = 0; i < pstore->root->size; i++) {
+        g_assert(ipos_compare(
+            pstore_pack_get(pack, i),
+            pstore_pack_get(sel, i)) == 0);
+
         Par * par = pstore_pack_get(pack, i);
         if(i != pstore->root->size - 1) {
             g_assert(ipos_compare(par->ipos, 
                     pstore_pack_get(pack, i + 1)->ipos) <= 0);
         }
     }
+    pstore_pack_free(sel);
     pstore_pack_free(pack);
 }
 void test_remove() {
