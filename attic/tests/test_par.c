@@ -49,8 +49,8 @@ void test_pack() {
     PackedPar * sel = pstore_pack_create_from_selection(pack, 0, pack->size);
     for(i = 0; i < pstore->root->size; i++) {
         g_assert(ipos_compare(
-            pstore_pack_get(pack, i),
-            pstore_pack_get(sel, i)) == 0);
+            pstore_pack_get(pack, i)->ipos,
+            pstore_pack_get(sel, i)->ipos) == 0);
 
         Par * par = pstore_pack_get(pack, i);
         if(i != pstore->root->size - 1) {
@@ -83,12 +83,13 @@ void test_remove() {
     pstore_check_consistency(pstore);
 }
 
-static void pstore_check_r(PStore * pstore, Node * node, int depth, ipos_t x, ipos_t y, ipos_t z);
+static void pstore_check_r(PStore * pstore, Node * node, int depth, ipos_t x, ipos_t y, ipos_t z, Node ** last_ext);
 void pstore_check_consistency(PStore * pstore) {
-    pstore_check_r(pstore, pstore->root, 0, 0, 0, 0);
+    Node * last_ext = NULL;
+    pstore_check_r(pstore, pstore->root, 0, 0, 0, 0, &last_ext);
 }
 
-static void pstore_check_r(PStore * pstore, Node * node, int depth, ipos_t x, ipos_t y, ipos_t z) {
+static void pstore_check_r(PStore * pstore, Node * node, int depth, ipos_t x, ipos_t y, ipos_t z, Node ** last_ext) {
     ipos_t width = 1 << (IPOS_NBITS - depth);
     ipos_t m = 1 << (IPOS_NBITS - depth - 1);
     if(node->last) {
@@ -107,14 +108,14 @@ static void pstore_check_r(PStore * pstore, Node * node, int depth, ipos_t x, ip
                 g_assert(node->link[prefix]->size > 0);
             g_assert(node->link[prefix]);
         }
-        pstore_check_r(pstore, node->link[0], depth + 1, x, y, z);
-        pstore_check_r(pstore, node->link[1], depth + 1, x + m, y, z);
-        pstore_check_r(pstore, node->link[2], depth + 1, x, y + m, z);
-        pstore_check_r(pstore, node->link[3], depth + 1, x + m, y + m, z);
-        pstore_check_r(pstore, node->link[4], depth + 1, x, y, z + m);
-        pstore_check_r(pstore, node->link[5], depth + 1, x + m, y, z + m);
-        pstore_check_r(pstore, node->link[6], depth + 1, x, y + m, z + m);
-        pstore_check_r(pstore, node->link[7], depth + 1, x + m, y + m, z + m);
+        pstore_check_r(pstore, node->link[0], depth + 1, x, y, z, last_ext);
+        pstore_check_r(pstore, node->link[1], depth + 1, x + m, y, z, last_ext);
+        pstore_check_r(pstore, node->link[2], depth + 1, x, y + m, z, last_ext);
+        pstore_check_r(pstore, node->link[3], depth + 1, x + m, y + m, z, last_ext);
+        pstore_check_r(pstore, node->link[4], depth + 1, x, y, z + m, last_ext);
+        pstore_check_r(pstore, node->link[5], depth + 1, x + m, y, z + m, last_ext);
+        pstore_check_r(pstore, node->link[6], depth + 1, x, y + m, z + m, last_ext);
+        pstore_check_r(pstore, node->link[7], depth + 1, x + m, y + m, z + m, last_ext);
     } else {
         int prefix;
         for(prefix = 0; prefix < 6; prefix++) {
@@ -148,6 +149,11 @@ static void pstore_check_r(PStore * pstore, Node * node, int depth, ipos_t x, ip
             par = par->next;
         }
         g_assert(pc == node->primary_size);
+        if(*last_ext) {
+            g_assert((*last_ext)->next == node);
+            g_assert(node->prev == (*last_ext));
+        }
+        *last_ext = node;
     }
 }
 

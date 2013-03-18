@@ -114,6 +114,8 @@ static void pstore_insert_r(PStore * pstore, Node * node, Par * par, int depth) 
                 node->link[prefix]->prev = node->link[prefix - 1];
             }
             //g_message("splitting node %p, for %d", node, node->primary_size);
+            if(prev_save) prev_save->next = node->link[0];
+            if(next_save) next_save->prev = node->link[7];
             node->link[0]->prev = prev_save;
             node->link[7]->next = next_save;
             node->size = 0;
@@ -233,6 +235,8 @@ static void pstore_child_shrunk(Node * node, int prefix) {
             g_slice_free(Node, node->link[i]);
             node->link[i] = NULL;
         }
+        if(next_save) next_save->prev = node;
+        if(prev_save) prev_save->next = node;
         node->next = next_save;
         node->prev = prev_save;
         node->first = NULL;
