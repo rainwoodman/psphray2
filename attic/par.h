@@ -47,7 +47,14 @@ typedef struct _Par {
 } Par;
 
 struct _ParNode {
-    struct _ParNode * link[8];
+    union {
+        struct _ParNode * link[8];
+        struct {
+            struct _ParNode * unused[6];
+            struct _ParNode * prev;
+            struct _ParNode * next;
+        };
+    };
     struct _ParNode * up;
     Par * first;
     Par * last;

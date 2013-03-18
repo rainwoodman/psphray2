@@ -117,7 +117,7 @@ static void pstore_check_r(PStore * pstore, Node * node, int depth, ipos_t x, ip
         pstore_check_r(pstore, node->link[7], depth + 1, x + m, y + m, z + m);
     } else {
         int prefix;
-        for(prefix = 0; prefix < 8; prefix++) {
+        for(prefix = 0; prefix < 6; prefix++) {
             g_assert(node->link[prefix] == NULL);
         }
         g_assert(node->primary_size <= pstore->split_limit);

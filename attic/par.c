@@ -46,8 +46,13 @@ static void pstore_free_node0(Node * node) {
     g_slice_free(Node, node);
 }
 void pstore_free_node(Node * node) {
-    int prefix;
+    Par * p = node->first, *q;
+    for (p = node->first; p; p = q) {
+        q = p->next;
+        pstore_free_par(p);
+    }
     if(node->link[0]) {
+        int prefix;
         for(prefix = 0; prefix < 8; prefix ++) {
             pstore_free_node(node->link[prefix]);
         }
@@ -97,12 +102,20 @@ static void pstore_insert_r(PStore * pstore, Node * node, Par * par, int depth) 
         && node->primary_size + 1 > pstore->split_limit && depth < pstore->depth_limit) {
             /* primary par may cause a split */
             int prefix;
+            Node * prev_save = node->prev;
+            Node * next_save = node->next;
             for(prefix = 0; prefix < 8; prefix++) {
                 node->link[prefix] = g_slice_new0(Node);
                 node->link[prefix]->up = node;
                 node->link[prefix]->prefix = prefix;
             }
+            for(prefix = 1; prefix < 8; prefix++) {
+                node->link[prefix - 1]->next = node->link[prefix];
+                node->link[prefix]->prev = node->link[prefix - 1];
+            }
             //g_message("splitting node %p, for %d", node, node->primary_size);
+            node->link[0]->prev = prev_save;
+            node->link[7]->next = next_save;
             node->size = 0;
             node->primary_size = 0;
             node->first_nonempty_child = 8;
@@ -213,11 +226,15 @@ static void pstore_child_shrunk(Node * node, int prefix) {
         g_assert(node->size == 0);
         /* this node is empty and shall no longer be internal */
         int i;
+        Node * prev_save = node->link[0]->prev;
+        Node * next_save = node->link[7]->next;
         for(i = 0; i < 8; i++) {
             g_assert(node->link[i]->size == 0);
             g_slice_free(Node, node->link[i]);
             node->link[i] = NULL;
         }
+        node->next = next_save;
+        node->prev = prev_save;
         node->first = NULL;
         node->last = NULL;
     }
@@ -227,8 +244,10 @@ static void pstore_child_shrunk(Node * node, int prefix) {
 /**
  * remove a node from the tree.
  * the particles in the node are dequeued.
- * the node is not freed, thus the particles can still be accessed
- * via the removed node.
+ * the node, and particles inside are all freed.
+ * 
+ * if need the particles, first pack them before calling
+ * remove_node.
  */
 void pstore_remove_node(PStore * pstore, Node * node) {
     Par * previous_par = pstore_node_previous_par(node);
@@ -242,16 +261,13 @@ void pstore_remove_node(PStore * pstore, Node * node) {
     }
     size_t size = node->size;
     size_t primary_size = node->primary_size;
-    node->size = 0;
-    node->primary_size = 0;
     Node * p;
     for(p = node; p->up; p = p->up) {
         p->up->size -= size;
         p->up->primary_size -= primary_size;
         pstore_child_shrunk(p->up, p->prefix);
     }
-    node->size = size;
-    node->primary_size = primary_size;
+    pstore_free_node(node);
 }
 /**
  * remove a particle by pointer ptr,
