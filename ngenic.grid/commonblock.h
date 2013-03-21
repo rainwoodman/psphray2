@@ -13,6 +13,11 @@ typedef struct {
     int DownSample;
 } level_t;
 
+typedef struct pow_table {
+  double logk, logD;
+} pow_table;
+
+
 typedef struct {
     double a;
 
@@ -56,6 +61,7 @@ typedef struct {
         int Nmesh;
         int SphereMode;
         int WhichSpectrum;
+        char * PowerSpectrumFile;
         double PrimordialIndex;
         double ShapeGamma;
     } IC;
@@ -66,9 +72,12 @@ void common_block_sync();
 
 extern int NR;
 extern int NL;
+int NPowerTable;
 extern region_t * R;
 extern level_t * L;
+extern pow_table *PowerTable;
 void levels_sort();
 void levels_alloc(size_t n);
 void regions_alloc(size_t n);
+void pow_table_alloc(size_t n);
 int levels_select(int Nmesh);

@@ -52,6 +52,46 @@ static void log_handler
     }
 }
 
+int compare_logk(const void *a, const void *b) {
+  if(((pow_table *) a)->logk < (((pow_table *) b)->logk))
+    return -1;
+
+  if(((pow_table *) a)->logk > (((pow_table *) b)->logk))
+    return +1;
+
+  return 0;
+}
+
+
+static void read_power_table() {
+    FILE *fd;
+    GList * ptr;
+    double k, p;
+
+    GList * table = NULL;
+
+    if(!(fd = fopen(CB.IC.PowerSpectrumFile, "r"))) {
+        g_error("can't read input spectrum in file '%s'\n", 
+                CB.IC.PowerSpectrumFile);
+    }
+
+    while (fscanf(fd, " %lg %lg ", &k, &p) == 2) {
+        struct pow_table * entry = g_new0(pow_table, 1);
+        table = g_list_insert_sorted(table, (gpointer)entry, compare_logk);
+        entry->logk = k;
+        entry->logD = p;
+    }
+    fclose(fd);
+    pow_table_alloc(g_list_length(table));
+    int i;
+    for(ptr = table, i = 0; ptr; ptr = ptr->next, i++) {
+        memcpy(&PowerTable[i], ptr->data, sizeof(pow_table));
+    }
+    g_list_free_full(table, g_free);
+    NPowerTable = i;
+}
+
+
 static void SECTION_COSMOLOGY(GKeyFile * keyfile) {
     ddouble(keyfile, "Cosmology", "h", &CB.C.h, 0.72);
     ddouble(keyfile, "Cosmology", "H", &CB.C.H, 0.1);
@@ -64,6 +104,7 @@ static void SECTION_COSMOLOGY(GKeyFile * keyfile) {
 static void SECTION_IC(GKeyFile * keyfile) {
     _integer(keyfile, "IC", "Seed", &CB.IC.Seed);
     dinteger(keyfile, "IC", "WhichSpectrum", &CB.IC.WhichSpectrum, 1); /*1 for EH, 3 for Etsu, 2 is from file and broken*/
+    dstring(keyfile, "IC", "PowerSpectrumFile", &CB.IC.PowerSpectrumFile, NULL); /*1 for EH, 3 for Etsu, 2 is from file and broken*/
     dinteger(keyfile, "IC", "SphereMode", &CB.IC.SphereMode, 1); 
     _double(keyfile, "IC", "BoxSize", &CB.BoxSize);
     _double(keyfile, "IC", "a", &CB.a);
@@ -177,6 +218,10 @@ static void paramfile_read(char * filename) {
     g_free(usedfilename);
     g_free(data);
     g_key_file_free(keyfile);
+
+    if(CB.IC.WhichSpectrum == 2) {
+        read_power_table();
+    }
 }
 
 static int decwidth(int n) {

@@ -1,4 +1,5 @@
 #include <glib.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <gsl/gsl_integration.h>
 #include "commonblock.h"
@@ -10,14 +11,6 @@ static double r_tophat;
 static double AA, BB, CC;
 static double nu;
 static double Norm;
-
-static int NPowerTable;
-
-static struct pow_table
-{
-  double logk, logD;
-}
- *PowerTable;
 
 
 static double PowerSpec_Tabulated(double k);
@@ -38,7 +31,6 @@ double PowerSpec(double k)
       break;
 
     case 2:
-      g_error("tabulated powerspec is unsupported");
       power = PowerSpec_Tabulated(k);
       break;
 
@@ -58,16 +50,6 @@ double GrowthFactor(double astart, double aend)
   return growth(aend) / growth(astart);
 }
 
-int compare_logk(const void *a, const void *b)
-{
-  if(((struct pow_table *) a)->logk < (((struct pow_table *) b)->logk))
-    return -1;
-
-  if(((struct pow_table *) a)->logk > (((struct pow_table *) b)->logk))
-    return +1;
-
-  return 0;
-}
 
 void init_power(void)
 {
@@ -80,6 +62,7 @@ void init_power(void)
 
   Norm = 1.0;
   Norm = CB.C.Sigma8 * CB.C.Sigma8 / TopHatSigma2(R8);
+  
 }
 
 
@@ -145,25 +128,23 @@ static double tk_eh(double k)		/* from Martin White */
 
 
 #endif
-static double PowerSpec_Tabulated(double k)
-{
-  double logk, logD, P, kold, u, dlogk, Delta2;
-  int binlow, binhigh, binmid;
 
+double PowerSpec_Tabulated(double k)
+{
+  double logk, logD, P, u, dlogk, Delta2;
+  int binlow, binhigh, binmid;
+  
   double mydlogk,dlogk_PowerTable;
   int mybinhigh,mybinlow,mybinmid;
+  
 
-  kold = k;
+  k *= (1000 * CB.U.KPC_h); /* convert to h/Mpc */
 
-#if 0
-  This need to be fixed
-  k *= (InputSpectrum_UnitLength_in_cm / UnitLength_in_cm);	/* convert to h/Mpc */
-
-#endif
   logk = log10(k);
 
   if(logk < PowerTable[0].logk || logk > PowerTable[NPowerTable - 1].logk)
     return 0;
+
 
   dlogk_PowerTable = PowerTable[1].logk-PowerTable[0].logk;
   mydlogk = logk - PowerTable[0].logk;
@@ -172,14 +153,14 @@ static double PowerSpec_Tabulated(double k)
 
   dlogk = PowerTable[mybinhigh].logk - PowerTable[mybinlow].logk;
 
-  if(dlogk == 0)
-    g_error("dlogk == 0");
+  g_assert(dlogk != 0);
+  g_assert(fabs(dlogk - dlogk_PowerTable) / dlogk < 1e5);
 
   u = (logk - PowerTable[mybinlow].logk) / dlogk;
 
   logD = (1 - u) * PowerTable[mybinlow].logD + u * PowerTable[mybinhigh].logD;
 
-  P = Norm*pow(10.0, logD);//*2*M_PI*M_PI;
+  P = Norm*pow(10.0, logD);
 
   return P;
 }
