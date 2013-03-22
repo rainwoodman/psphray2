@@ -87,7 +87,8 @@ def main_gadget(A):
         chunk = chunk[~excludemask]
         print 'excluding', excludemask.sum(), 'particles'
         ipos = exclude['ipos']
-        print 'exclude stat', 'min', ipos.min(axis=0), 'max', ipos.max(axis=0)
+        if len(ipos):
+          print 'exclude stat', 'min', ipos.min(axis=0), 'max', ipos.max(axis=0)
       for start in range(0, len(chunk), A.Npar):
         F.append(write_gadget_one('%s.%d' % (A.prefix, fid), h, chunk[start:start+A.Npar]))
         print F[-1][1]['mass']

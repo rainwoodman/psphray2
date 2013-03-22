@@ -27,11 +27,14 @@ def readchunk(H, fname, bottom=None, top=None, extra=''):
   print 'read chunk', fname, extra
   if H['Scale'] == 0.0:
     assert H['DownSample'] == 1
-    xstart = fid * H['Nmesh'] // H['NTask']
-    xend = (fid + 1) * H['Nmesh'] // H['NTask']
+    xstart = fid * int(numpy.ceil(1.0 * H['Nmesh'] / H['NTask']))
+    xend = (fid + 1) * int(numpy.ceil(1.0 * H['Nmesh'] / H['NTask']))
+    if xend > H['Nmesh']: xend = H['Nmesh']
     index = numpy.arange(
                xstart * H['Nmesh'] * H['Nmesh'],
                xend * H['Nmesh'] * H['Nmesh'])
+    if xstart > xend:
+      xstart = xend
   else:
     index = numpy.memmap(fname % 'index', mode='r', dtype='i8')
   ipos = numpy.array(numpy.unravel_index(index, H['Size']), dtype='i4').T
