@@ -2,7 +2,23 @@ import numpy
 from scipy.ndimage import map_coordinates
 # this requires numpy > 1.6.0
 from args import parseargs
-from myio import readchunk, writechunk, yieldfilename, write_gadget_one, rewrite_header
+from myio import readchunk, writechunk, yieldfilename, write_gadget_one, rewrite_header, writerecord
+
+def joinchunks(h, exbot=None, extop=None):
+  overlay_list = []
+  for fn in list(yieldfilename(h)):
+    chunk = readchunk(h, fn, exbot, extop)
+    ipos = chunk['ipos']
+    if len(ipos) > 0:
+      print 'ipos stat', 'min', ipos.min(axis=0), 'max', ipos.max(axis=0)
+    else:
+      print 'ipos empty'
+    overlay_list.append(chunk)
+  overlay = numpy.concatenate(overlay_list)
+  overlay_list = []
+  index = numpy.ravel_multi_index(overlay['ipos'].T - h['Offset'][:, None], h['Size'])
+  overlay = overlay[index.argsort()]
+  return overlay
 
 def interpolate(h, hnext):
   """ interpolate h into hnext """
@@ -13,27 +29,17 @@ def interpolate(h, hnext):
 
   print h['Nmesh'], 'box', exbot, extop
 
-  overlay_list = []
-  for fn in list(yieldfilename(h)):
-    chunk = readchunk(h, fn, exbot, extop)
-    ipos = chunk['ipos']
-    print 'ipos stat', 'min', ipos.min(axis=0), 'max', ipos.max(axis=0)
-    overlay_list.append(chunk)
-  overlay = numpy.concatenate(overlay_list)
-  overlay_list = []
-  index = numpy.ravel_multi_index((overlay['ipos'] - exbot).T, extop - exbot)
-  overlay = overlay[index.argsort()]
+  overlay = joinchunks(h, exbot, extop)
+  src = overlay.reshape(*(extop-exbot))
 
   for fn in list(yieldfilename(hnext, lookfor='delta1')):
     # read in the current level displacement
     chunk = readchunk(hnext, fn, None, None, extra='1')
     ipos = chunk['ipos']
     ipos = 1.0 * ipos * h['Nmesh'] / hnext['Nmesh'] - exbot
-    src = overlay['delta'].reshape(*(extop-exbot))
-    chunk['delta'] += map_coordinates(src, ipos.T)
+    chunk['delta'] += map_coordinates(src['delta'], ipos.T)
     for d in range(3):
-      src = overlay['disp'][:, d].reshape(*(extop-exbot))
-      chunk['disp'][:, d] += map_coordinates(src, ipos.T)
+      chunk['disp'][:, d] += map_coordinates(src['disp'][..., d], ipos.T)
     # write to the full displacement
     writechunk(hnext, fn, chunk)
 
@@ -59,6 +65,7 @@ def main_gadget(A):
   for i in range(len(A.L)):
     h = A.META[Nmesh[i]]
 
+    overlay = joinchunks(h).reshape(h['Size'])
     for fn in list(yieldfilename(h)):
       chunk = readchunk(h, fn, None, None)
       if i != 0:
@@ -89,6 +96,15 @@ def main_gadget(A):
         ipos = exclude['ipos']
         if len(ipos):
           print 'exclude stat', 'min', ipos.min(axis=0), 'max', ipos.max(axis=0)
+
+      # here we use the center cell value for these particles.
+      # the locations are shifted later in write_gadget_one.
+      chunk['delta'] = map_coordinates(overlay['delta'], 
+              chunk['ipos'].T + 0.5 - h['Offset'][:, None], mode='wrap')
+      for d in range(3):
+          chunk['disp'][:, d] = map_coordinates(overlay['disp'][..., d], 
+              chunk['ipos'].T + 0.5 - h['Offset'][:, None], mode='wrap')
+
       for start in range(0, len(chunk), A.Npar):
         F.append(write_gadget_one('%s.%d' % (A.prefix, fid), h, chunk[start:start+A.Npar]))
         print F[-1][1]['mass']
@@ -133,3 +149,47 @@ def selectmask(chunk, BoxSize, Nmesh, Nalign, center, radius, cubic):
     mask = (dis < 1.0).all(axis=-1)
   return mask
 main()
+
+def main_ramses(A):
+  def write_ramses(header, Nmesh, name, buffer):
+    with file('%s%d-%s' % (A.prefix, Nmesh, name), 'w') as icfile:
+      buffer = buffer.reshape(header['np'])
+      writerecord(icfile, header)
+      for row in buffer.transpose((2, 0, 1)):
+        writerecord(icfile, row.ravel('F'))
+
+  RHEADER = numpy.dtype([
+   ('np', ('i4', 3)), ('dx', 'f4'), 
+   ('xo', ('f4', 3)), ('astart', 'f4'), 
+   ('omegam', 'f4'), ('omegav', 'f4'), ('h0', 'f4')])
+  # to MPC
+  fac = 1.0 / A.h * args.UnitLength_in_cm / 3.08567758e24
+  boxsize = A.BoxSize * fac
+
+  Nmesh = A.L['Nmesh']
+  fid = 0
+  F = []
+  for i in range(len(A.L)):
+    h = A.META[Nmesh[i]]
+
+    header['dx'] = boxsize / Nmesh[i]
+    header['astart'] = A.a
+    header['omegam'] = A.OmegaM
+    header['omegav'] = A.OmegaL
+    header['h0'] = A.h * 100.0
+    if i == 0:
+      header['np'][:] = Nmesh
+      header['xo'][:] = 0
+    else:
+      header['np'][:] = h['Size']
+      header['xo'][:] = header['dx'] * h['Offset']
+
+    overlay = joinchunks(h)
+    write_ramses(header, Nmesh, 'deltab', overlay['delta'])
+    for i, block in enumerate(['dispx', 'dispy', 'dispz']):
+      disp = overlay['disp'][:, i] * fac
+      write_ramses(header, Nmesh, block, disp)
+      disp = overlay['disp'][:, i]
+      # is ramses vel unit in km/s?
+      disp * (h['vfact'] * A.a ** 0.5)
+      write_ramses(header, Nmesh, ['velcx', 'velcy', 'velcz'][i], disp)
