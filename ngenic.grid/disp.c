@@ -26,15 +26,17 @@ extern double GrowthFactor(double, double);
 
 #define PKT(i, j, k) Cdata[(((j) - Local_y_start) * Nsample + (i)) * (Nsample / 2 + 1) + (k)]
 
-void init_disp() {
-    Nmesh = CB.IC.Nmesh;
-    NmeshBefore = CB.IC.Level>0?L[CB.IC.Level-1].Nmesh:0;
-    DownSample = L[CB.IC.Level].DownSample;
+void init_seedtable();
+void init_disp(int Level) {
+    Nmesh = L[Level].Nmesh;
+    NmeshBefore = Level>0?L[Level-1].Nmesh:0;
+    DownSample = L[Level].DownSample;
     Nsample = Nmesh / DownSample;
     BoxSize = CB.BoxSize; 
     Dplus = GrowthFactor(CB.a, 1.0);
 
-    fftw_mpi_init();
+    init_seedtable();
+
 
     localsize = fftw_mpi_local_size_3d_transposed(Nsample, Nsample,
              Nsample / 2+1, MPI_COMM_WORLD, 
@@ -83,10 +85,8 @@ void init_seedtable() {
 }
 
 void free_disp(void) {
-    if(Cdata) free(Cdata);
-    if(seedtable) g_free(seedtable);
+    if(Cdata) fftw_free(Cdata);
     fftw_destroy_plan(InversePlan);
-    fftw_mpi_cleanup();
 }
 
 static inline int j_in_slab(int j) {
@@ -141,25 +141,22 @@ void fill_PK(int ax) {
         k2table[i] = ktable[i] * ktable[i];
     }
 
+    /* allocate memory only if it is needed */
+    Cdata = fftw_alloc_complex(localsize);
     if(!Cdata) {
-        init_seedtable();
-        /* allocate memory only if it is needed */
-        Cdata = fftw_alloc_complex(localsize);
-        if(!Cdata) {
-            g_error("memory allocation failed");
-        }
-        MPI_Barrier(MPI_COMM_WORLD);
-        size_t llocalsize = localsize;
-        MPI_Allreduce(MPI_IN_PLACE, &llocalsize, 1, MPI_LONG, MPI_MAX, MPI_COMM_WORLD);
-        ROOTONLY {
-            g_message("max allocation %ld bytes for FFT, Nsample=%d", llocalsize * sizeof(double) * 2, Nsample);
-        }
-        Disp = (double*) Cdata;
-        /* In place b/c Cdata is an alias of Disp */
-        InversePlan = fftw_mpi_plan_dft_c2r_3d(Nsample, Nsample, Nsample, Cdata, Disp, MPI_COMM_WORLD, FFTW_ESTIMATE | FFTW_MPI_TRANSPOSED_IN);
-        ROOTONLY {
-            g_message("fft plan established");
-        }
+        g_error("memory allocation failed");
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+    size_t llocalsize = localsize;
+    MPI_Allreduce(MPI_IN_PLACE, &llocalsize, 1, MPI_LONG, MPI_MAX, MPI_COMM_WORLD);
+    ROOTONLY {
+        g_message("max allocation %ld bytes for FFT, Nsample=%d", llocalsize * sizeof(double) * 2, Nsample);
+    }
+    Disp = (double*) Cdata;
+    /* In place b/c Cdata is an alias of Disp */
+    InversePlan = fftw_mpi_plan_dft_c2r_3d(Nsample, Nsample, Nsample, Cdata, Disp, MPI_COMM_WORLD, FFTW_ESTIMATE | FFTW_MPI_TRANSPOSED_IN);
+    ROOTONLY {
+        g_message("fft plan established");
     }
 
     memset(Cdata, 0, localsize * sizeof(fftw_complex));
@@ -313,3 +310,4 @@ void disp(int ax) {
     fftw_execute(InversePlan); 
     ROOTONLY g_message("done fft axis %d", ax);
 }
+

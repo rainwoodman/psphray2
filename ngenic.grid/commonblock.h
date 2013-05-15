@@ -57,8 +57,6 @@ typedef struct {
     } C;
     struct {
         int Seed;
-        int Level;
-        int Nmesh;
         int SphereMode;
         int WhichSpectrum;
         char * PowerSpectrumFile;

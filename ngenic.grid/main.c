@@ -9,10 +9,11 @@
 #include "paramfile.inc"
 #include "commonblock.h"
 #include <math.h>
+#include <fftw3-mpi.h>
 extern void init_power(void);
-extern void init_disp(void);
+extern void init_disp(int Level);
 extern void free_disp(void);
-extern void init_filter(void);
+extern void init_filter(int Level);
 extern void disp(int ax);
 extern void filter(int ax, char* fname, int i);
 extern double F_Omega(double a);
@@ -201,12 +202,6 @@ static void paramfile_read(char * filename) {
 
     levels_sort();
 
-    CB.IC.Level = levels_select(CB.IC.Nmesh);
-
-    if(CB.IC.Level == 0 && CB.F.INDEX) {
-        g_error("no index to be made for the base level mesh (whose Scale == 0.0)");
-    }
-    g_message("using scale %g", L[CB.IC.Level].Scale);
     g_strfreev(keys);
 
     char * data = g_key_file_to_data(keyfile, NULL, NULL);
@@ -232,9 +227,9 @@ static int decwidth(int n) {
     return width;
 }
 
-static void write_header(char * fname) {
-    int DownSample = L[CB.IC.Level].DownSample;
-    int Nmesh = CB.IC.Nmesh;
+static void write_header(int Level, char * fname) {
+    int DownSample = L[Level].DownSample;
+    int Nmesh = L[Level].Nmesh;
     FILE * fp = fopen(fname, "w");
     fprintf(fp, "NTask = %d\n", NTask);
     fprintf(fp, "DownSample = %d\n", DownSample);
@@ -262,10 +257,14 @@ static void write_header(char * fname) {
 
 int main(int argc, char * argv[]) {
 
+    int Level;
+
     MPI_Init(&argc, &argv);
     g_log_set_default_handler(log_handler, NULL);
     g_set_print_handler(print_handler);
+
     mpiu_init();
+    fftw_mpi_init();
 
     ROOTONLY {
         GError * error = NULL;
@@ -282,22 +281,37 @@ int main(int argc, char * argv[]) {
             g_print(g_option_context_get_help(context, FALSE, NULL));
             abort();
         }
-        CB.IC.Nmesh = g_ascii_strtoll(args[1], NULL, 10);
-        if(CB.IC.Nmesh == 0) {
+        int Nmesh = g_ascii_strtoll(args[1], NULL, 10);
+        if(Nmesh == 0) {
             g_error("must give Nmesh!");
         }
         /* this will make use of CB.IC.Nmesh, thus later */
         g_message("Reading param file %s", args[0]);
         paramfile_read(args[0]);
         g_option_context_free(context);
+        Level = levels_select(Nmesh);
+
+        if(Level == 0 && CB.F.INDEX) {
+         g_error("no index to be made for the base level mesh (whose Scale == 0.0)");
+        }
+        g_message("using scale %g", L[Level].Scale);
     }
+
+    MPI_Bcast(&Level, sizeof(Level), MPI_BYTE, 0, MPI_COMM_WORLD);
     common_block_sync();
+
+    int DownSample = L[Level].DownSample;
+    int Nmesh = L[Level].Nmesh;
+    int width = decwidth(NTask);
+    int dswidth = decwidth(DownSample);
+
     init_power();
+
     ROOTONLY {
-        char * fname = g_strdup_printf("%s/power-%d.txt", CB.datadir, CB.IC.Nmesh);
+        char * fname = g_strdup_printf("%s/power-%d.txt", CB.datadir, Nmesh);
         double K0 = 2 * G_PI / CB.BoxSize;
         FILE * fp = fopen(fname, "w");
-        for(int i = 0; i < CB.IC.Nmesh; i++) {
+        for(int i = 0; i < Nmesh; i++) {
             fprintf(fp, "%g %g\n", i * K0, PowerSpec(i * K0));
         }
         fclose(fp);
@@ -307,8 +321,8 @@ int main(int argc, char * argv[]) {
         MPI_Finalize();
         return 0;
     }
-    init_disp();
-    init_filter();
+
+    init_disp(Level);
 
     char * blocks[] = {"region", "index", "dispx", "dispy", "dispz", "delta"};
     int axstart, axend;
@@ -319,10 +333,6 @@ int main(int argc, char * argv[]) {
         axstart = -2;
         axend = 4;
     }
-    int DownSample = L[CB.IC.Level].DownSample;
-    int Nmesh = CB.IC.Nmesh;
-    int width = decwidth(NTask);
-    int dswidth = decwidth(DownSample);
 
     for(int ax = axstart; ax < axend; ax ++) {
         /* -2 is the region mask and -1 is the index map, they do not need the displacment field */
@@ -330,26 +340,26 @@ int main(int argc, char * argv[]) {
         for(int i = 0; i < DownSample; i++) {
             ROOTONLY {
                 char * fname = g_strdup_printf("%s/%s-%d.header", CB.datadir, blocks[ax + 2], Nmesh);
-                write_header(fname);
+                write_header(Level, fname);
                 free(fname);
             }
             char * fname;
             if(DownSample == 1) {
                 fname = g_strdup_printf("%s/%s-%d.%0*d", CB.datadir, blocks[ax + 2], Nmesh, width, ThisTask);
             } else {
-                if(ax >= 0) {
-                    /* because this has only the power in this level. */
-                    fname = g_strdup_printf("%s/%s1-%d.%0*d-%0*d", CB.datadir, blocks[ax + 2], Nmesh, dswidth, i, width, ThisTask);
-                } else {
-                    fname = g_strdup_printf("%s/%s-%d.%0*d-%0*d", CB.datadir, blocks[ax + 2], Nmesh, dswidth, i, width, ThisTask);
-                }
+                /* only power on this level is included, file postfix is '1' */
+                fname = g_strdup_printf("%s/%s%s-%d.%0*d-%0*d", CB.datadir, blocks[ax + 2], (ax>=0)?"1":"", Nmesh, dswidth, i, width, ThisTask);
             }
+
+            init_filter(Level);
             filter(ax, fname, i);
+
             g_free(fname);
         }
+        if(ax > 0) free_disp();
         MPI_Barrier(MPI_COMM_WORLD);
     }
-    free_disp();
+    fftw_mpi_cleanup();
     MPI_Finalize();
 }
 

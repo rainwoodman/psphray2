@@ -52,12 +52,12 @@ int sweep(cross_t * dest, int pos, int d, cross_t * src, int length) {
 }
 
 
-void init_filter() {
-    Nmesh = CB.IC.Nmesh;
-    DownSample = L[CB.IC.Level].DownSample;
+void init_filter(int Level) {
+    Nmesh = L[Level].Nmesh;
+    DownSample = L[Level].DownSample;
     Nsample = Nmesh / DownSample;
     double Scale;
-    Scale = L[CB.IC.Level].Scale;
+    Scale = L[Level].Scale;
     R0 = CB.BoxSize / Nmesh;
     Base = Scale == 0.0;
     for(int r = 0; r < NR; r++) {
@@ -66,7 +66,7 @@ void init_filter() {
             double c = remainder(R[r].center[d], CB.BoxSize);
             while(c < 0) c += CB.BoxSize;
             R[r].ibottom[d] = Base?0:floor((c - R[r].size[d] * 0.5 * Scale) / R0) - 1;
-            R[r].itop[d] = Base?CB.IC.Nmesh:ceil((c + R[r].size[d] * 0.5 * Scale) / R0)+ 1;
+            R[r].itop[d] = Base?Nmesh:ceil((c + R[r].size[d] * 0.5 * Scale) / R0)+ 1;
             R[r].isize[d] = R[r].itop[d] - R[r].ibottom[d];
         }
         R[r].stride[0] = R[r].isize[1] * R[r].isize[2];
