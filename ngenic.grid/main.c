@@ -375,6 +375,7 @@ int main(int argc, char * argv[]) {
             /* this is the primary mesh; 
              * degrade to get the coarse meshes, too */
             for(int i = Level; i >= 0; i--) {
+                g_message("running on level %d", L[i].Nmesh);
                 if(ax >=0)
                     if(i != Level)
                         degrade(i + 1, i);
