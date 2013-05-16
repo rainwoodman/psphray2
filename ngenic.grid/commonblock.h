@@ -59,6 +59,7 @@ typedef struct {
         int Seed;
         int SphereMode;
         int WhichSpectrum;
+        int NmeshPrimary;
         char * PowerSpectrumFile;
         double PrimordialIndex;
         double ShapeGamma;

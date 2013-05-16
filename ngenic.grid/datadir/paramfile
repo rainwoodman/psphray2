@@ -9,7 +9,7 @@ Seed = 181170
 BoxSize = 250
 # The scaling factor (1 / (z + 1)) of the IC.
 a = 0.00625
-
+NmeshPrimary = 32
 # EH spectrum
 WhichSpectrum=1
 Sigma8 = 0.8

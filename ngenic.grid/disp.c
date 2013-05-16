@@ -7,7 +7,6 @@
 #include <fftw3-mpi.h>
 #include <math.h>
 
-static fftw_complex * Cdata;
 double * Disp;
 intptr_t Local_nx;
 intptr_t Local_x_start;
@@ -24,6 +23,7 @@ static double Dplus;
 extern double PowerSpec(double);
 extern double GrowthFactor(double, double);
 
+#define Cdata ((fftw_complex *) Disp)
 #define PKT(i, j, k) Cdata[(((j) - Local_y_start) * Nsample + (i)) * (Nsample / 2 + 1) + (k)]
 
 void init_seedtable();
@@ -142,8 +142,8 @@ void fill_PK(int ax) {
     }
 
     /* allocate memory only if it is needed */
-    Cdata = fftw_alloc_complex(localsize);
-    if(!Cdata) {
+    Disp = (double*) fftw_alloc_complex(localsize);
+    if(!Disp) {
         g_error("memory allocation failed");
     }
     MPI_Barrier(MPI_COMM_WORLD);
@@ -152,7 +152,6 @@ void fill_PK(int ax) {
     ROOTONLY {
         g_message("max allocation %ld bytes for FFT, Nsample=%d", llocalsize * sizeof(double) * 2, Nsample);
     }
-    Disp = (double*) Cdata;
     /* In place b/c Cdata is an alias of Disp */
     InversePlan = fftw_mpi_plan_dft_c2r_3d(Nsample, Nsample, Nsample, Cdata, Disp, MPI_COMM_WORLD, FFTW_ESTIMATE | FFTW_MPI_TRANSPOSED_IN);
     ROOTONLY {

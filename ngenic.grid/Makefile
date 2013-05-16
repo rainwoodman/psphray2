@@ -8,6 +8,7 @@ SOURCES = \
     ../src/mpiu.c \
     commonblock.c \
     power.c \
+	degrade.c \
     disp.c \
     filter.c
 

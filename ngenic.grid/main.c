@@ -16,6 +16,7 @@ extern void free_disp(void);
 extern void init_filter(int Level);
 extern void disp(int ax);
 extern void filter(int ax, char* fname, int i);
+extern void degrade(int Level0, int Level1);
 extern double F_Omega(double a);
 
 extern double GrowthFactor(double, double);
@@ -104,6 +105,9 @@ static void SECTION_COSMOLOGY(GKeyFile * keyfile) {
 }
 static void SECTION_IC(GKeyFile * keyfile) {
     _integer(keyfile, "IC", "Seed", &CB.IC.Seed);
+    /* the primary mesh is where the fft is done.
+     * coarse meshes are obtained by rebinning.*/
+    _integer(keyfile, "IC", "NmeshPrimary", &CB.IC.NmeshPrimary);
     dinteger(keyfile, "IC", "WhichSpectrum", &CB.IC.WhichSpectrum, 1); /*1 for EH, 3 for Etsu, 2 is from file and broken*/
     dstring(keyfile, "IC", "PowerSpectrumFile", &CB.IC.PowerSpectrumFile, NULL); /*1 for EH, 3 for Etsu, 2 is from file and broken*/
     dinteger(keyfile, "IC", "SphereMode", &CB.IC.SphereMode, 1); 
@@ -255,6 +259,32 @@ static void write_header(int Level, char * fname) {
     fclose(fp);
 }
 
+void run_filter(int Level, int ax, int i) {
+    static char * blocks[] = {"region", "index", "dispx", "dispy", "dispz", "delta"};
+    int Nmesh = L[Level].Nmesh;
+    int DownSample = L[Level].DownSample;
+
+    int width = decwidth(NTask);
+    int dswidth = decwidth(DownSample);
+    char * fname;
+
+    ROOTONLY {
+        fname = g_strdup_printf("%s/%s-%d.header", CB.datadir, blocks[ax + 2], Nmesh);
+        write_header(Level, fname);
+        free(fname);
+    }
+    if(DownSample == 1) {
+        fname = g_strdup_printf("%s/%s-%d.%0*d", CB.datadir, blocks[ax + 2], Nmesh, width, ThisTask);
+    } else {
+        /* only power on this level is included, file postfix is '1' */
+        fname = g_strdup_printf("%s/%s%s-%d.%0*d-%0*d", CB.datadir, blocks[ax + 2], (ax>=0)?"1":"", Nmesh, dswidth, i, width, ThisTask);
+    }
+
+    init_filter(Level);
+    filter(ax, fname, i);
+
+    g_free(fname);
+}
 int main(int argc, char * argv[]) {
 
     int Level;
@@ -289,6 +319,12 @@ int main(int argc, char * argv[]) {
         g_message("Reading param file %s", args[0]);
         paramfile_read(args[0]);
         g_option_context_free(context);
+
+        if(Nmesh < CB.IC.NmeshPrimary) {
+            g_error("Nmesh must be greater than NmeshPrimary in paramfile,"
+                    "coarser meshes are produced by degrading the primary mesh.");
+        }
+
         Level = levels_select(Nmesh);
 
         if(Level == 0 && CB.F.INDEX) {
@@ -302,8 +338,6 @@ int main(int argc, char * argv[]) {
 
     int DownSample = L[Level].DownSample;
     int Nmesh = L[Level].Nmesh;
-    int width = decwidth(NTask);
-    int dswidth = decwidth(DownSample);
 
     init_power();
 
@@ -322,9 +356,6 @@ int main(int argc, char * argv[]) {
         return 0;
     }
 
-    init_disp(Level);
-
-    char * blocks[] = {"region", "index", "dispx", "dispy", "dispz", "delta"};
     int axstart, axend;
     if(CB.F.INDEX) {
         axstart = -2;
@@ -336,30 +367,31 @@ int main(int argc, char * argv[]) {
 
     for(int ax = axstart; ax < axend; ax ++) {
         /* -2 is the region mask and -1 is the index map, they do not need the displacment field */
-        if(ax >= 0) disp(ax);
-        for(int i = 0; i < DownSample; i++) {
-            ROOTONLY {
-                char * fname = g_strdup_printf("%s/%s-%d.header", CB.datadir, blocks[ax + 2], Nmesh);
-                write_header(Level, fname);
-                free(fname);
-            }
-            char * fname;
-            if(DownSample == 1) {
-                fname = g_strdup_printf("%s/%s-%d.%0*d", CB.datadir, blocks[ax + 2], Nmesh, width, ThisTask);
-            } else {
-                /* only power on this level is included, file postfix is '1' */
-                fname = g_strdup_printf("%s/%s%s-%d.%0*d-%0*d", CB.datadir, blocks[ax + 2], (ax>=0)?"1":"", Nmesh, dswidth, i, width, ThisTask);
-            }
-
-            init_filter(Level);
-            filter(ax, fname, i);
-
-            g_free(fname);
+        if(ax >= 0) {
+            init_disp(Level);
+            disp(ax);
         }
-        if(ax > 0) free_disp();
+        if (Nmesh == CB.IC.NmeshPrimary) {
+            /* this is the primary mesh; 
+             * degrade to get the coarse meshes, too */
+            for(int i = Level; i >= 0; i--) {
+                if(ax >=0)
+                    if(i != Level)
+                        degrade(i + 1, i);
+                /* these coarse levels never have DownSample,
+                 * 0 or anything will work */
+                run_filter(i, ax, 0);
+            }
+        } else {
+            for(int i = 0; i < DownSample; i++) {
+                run_filter(Level, ax, i);
+            }
+        }
+        if(ax > 0) {
+            free_disp();
+        }
         MPI_Barrier(MPI_COMM_WORLD);
     }
     fftw_mpi_cleanup();
     MPI_Finalize();
 }
-
