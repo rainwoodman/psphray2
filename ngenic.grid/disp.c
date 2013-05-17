@@ -26,7 +26,6 @@ extern double GrowthFactor(double, double);
 #define Cdata ((fftw_complex *) Disp)
 #define PKT(i, j, k) Cdata[(((j) - Local_y_start) * Nsample + (i)) * (Nsample / 2 + 1) + (k)]
 
-void init_seedtable();
 void init_disp(int Level) {
     Nmesh = L[Level].Nmesh;
     NmeshBefore = Level>0?L[Level-1].Nmesh:0;
@@ -35,8 +34,7 @@ void init_disp(int Level) {
     BoxSize = CB.BoxSize; 
     Dplus = GrowthFactor(CB.a, 1.0);
 
-    init_seedtable();
-
+    Cdata = NULL;
 
     localsize = fftw_mpi_local_size_3d_transposed(Nsample, Nsample,
              Nsample / 2+1, MPI_COMM_WORLD, 
@@ -44,7 +42,11 @@ void init_disp(int Level) {
             &Local_ny, &Local_y_start);
 }
 
-void init_seedtable() {
+void init_seedtable(int Level) {
+    int Nmesh = L[Level].Nmesh;
+    int Nsample = L[Level].Nmesh / L[Level].DownSample;
+    int DownSample = L[Level].DownSample;
+
     gsl_rng * random_generator = gsl_rng_alloc(gsl_rng_ranlxd1);
 
     gsl_rng_set(random_generator, CB.IC.Seed);
@@ -94,7 +96,6 @@ static inline int j_in_slab(int j) {
 }
 
 void fill_PK(int ax) {
-    if(ax < 0) return;
     int i, j, k;
     int dsi, dsii, dsj, dsjj, dsk, dskk;
     int kmod;
@@ -141,24 +142,6 @@ void fill_PK(int ax) {
         k2table[i] = ktable[i] * ktable[i];
     }
 
-    /* allocate memory only if it is needed */
-    Disp = (double*) fftw_alloc_complex(localsize);
-    if(!Disp) {
-        g_error("memory allocation failed");
-    }
-    MPI_Barrier(MPI_COMM_WORLD);
-    size_t llocalsize = localsize;
-    MPI_Allreduce(MPI_IN_PLACE, &llocalsize, 1, MPI_LONG, MPI_MAX, MPI_COMM_WORLD);
-    ROOTONLY {
-        g_message("max allocation %ld bytes for FFT, Nsample=%d", llocalsize * sizeof(double) * 2, Nsample);
-    }
-    /* In place b/c Cdata is an alias of Disp */
-    InversePlan = fftw_mpi_plan_dft_c2r_3d(Nsample, Nsample, Nsample, Cdata, Disp, MPI_COMM_WORLD, FFTW_ESTIMATE | FFTW_MPI_TRANSPOSED_IN);
-    ROOTONLY {
-        g_message("fft plan established");
-    }
-
-    memset(Cdata, 0, localsize * sizeof(fftw_complex));
 
     gsl_rng * random_generator = gsl_rng_alloc(gsl_rng_ranlxd1);
 
@@ -302,6 +285,27 @@ void fill_PK(int ax) {
 
 
 void disp(int ax) {
+    if(ax < 0) return;
+
+    /* allocate memory only if it is needed */
+    Disp = (double*) fftw_alloc_complex(localsize);
+    if(!Disp) {
+        g_error("memory allocation failed");
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+    size_t llocalsize = localsize;
+    MPI_Allreduce(MPI_IN_PLACE, &llocalsize, 1, MPI_LONG, MPI_MAX, MPI_COMM_WORLD);
+    ROOTONLY {
+        g_message("max allocation %ld bytes for FFT, Nsample=%d", llocalsize * sizeof(double) * 2, Nsample);
+    }
+    /* In place b/c Cdata is an alias of Disp */
+    InversePlan = fftw_mpi_plan_dft_c2r_3d(Nsample, Nsample, Nsample, Cdata, Disp, MPI_COMM_WORLD, FFTW_ESTIMATE | FFTW_MPI_TRANSPOSED_IN);
+    ROOTONLY {
+        g_message("fft plan established");
+    }
+
+    memset(Cdata, 0, localsize * sizeof(fftw_complex));
+
     ROOTONLY g_message("filling axis %d", ax);
     fill_PK(ax);
     MPI_Barrier(MPI_COMM_WORLD);

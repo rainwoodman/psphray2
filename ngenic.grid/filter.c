@@ -36,7 +36,11 @@ int sweep(cross_t * dest, int pos, int d, cross_t * src, int length) {
      * for each.
      * Stride and IBottom, ISize also need to be filled.
      * */
-    if(Base) return 1;
+    if(Base) {
+        dest[0] = src[0];
+        dest[0].index += R[0].stride[d] * pos - R[0].ibottom[d];
+        return 1;
+    }
     int newlength = 0;
     for(int i = 0; i < length; i++) {
         int r = src[i].region;

@@ -35,7 +35,7 @@ static void layout(int x0, int x1, int * out) {
 
     rdisp[0] = 0;
     for(int i = 1; i < NTask; i++) {
-        rdisp[i] = rdisp[i - 1] + recvcount[i];
+        rdisp[i] = rdisp[i - 1] + recvcount[i - 1];
     }
     int buf[size];
     for(int i = 0; i < size; i++) {
@@ -45,7 +45,7 @@ static void layout(int x0, int x1, int * out) {
             out, recvcount, rdisp, MPI_INT, MPI_COMM_WORLD);
 }
 
-void degrade(int Level, int newlevel) {
+void degrade(int ax, int Level, int newlevel) {
     Nmesh = L[Level].Nmesh;
     int factor = Nmesh / L[newlevel].Nmesh;
     int DownSample = L[Level].DownSample;
@@ -62,12 +62,33 @@ void degrade(int Level, int newlevel) {
     Local_x_end_new = (ThisTask + 1)* (Nsample_new) / NTask;
     Local_nx_new = Local_x_end_new - Local_x_start_new;
 
+    if(ax < 0) {
+        Local_x_start = Local_x_start_new;
+        Local_nx = Local_nx_new;
+        return;
+    }
     int OldLayout[Nsample];
     int NewLayout[Nsample_new];
 
     layout(Local_x_start, Local_x_end, OldLayout);
     layout(Local_x_start_new, Local_x_end_new, NewLayout);
-
+    MPI_Barrier(MPI_COMM_WORLD);
+    ROOTONLY {
+        g_message("layout decided");
+        g_print("%d New:\n", Nsample_new);
+        g_print("%td %td\n", Local_x_start_new, Local_x_end_new);
+        for(int i = 0; i < Nsample_new; i++) {
+            g_print(" %d ", NewLayout[i]);
+        }
+        g_print("\n");
+        g_print("%d Old:\n", Nsample);
+        g_print("%td %td\n", Local_x_start, Local_x_end);
+        for(int i = 0; i < Nsample; i++) {
+            g_print(" %d ", OldLayout[i]);
+        }
+        g_print("\n");
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
     double * DispNew = fftw_malloc(sizeof(double) * 
             slab_size_new * Local_nx_new);
 
@@ -80,6 +101,7 @@ void degrade(int Level, int newlevel) {
         int inew = i / factor;
         if(inew < Local_x_start_new || inew >= Local_x_end_new) {
             /* export this*/ 
+            g_message("export slab %d from task %d", inew, ThisTask);
             if(ExportSlabs[inew] == NULL) {
                 ExportSlabs[inew] = fftw_malloc(sizeof(double) * slab_size_new);
                 memset(ExportSlabs[inew], 0, sizeof(double) * slab_size_new);
@@ -107,7 +129,7 @@ void degrade(int Level, int newlevel) {
     for(int i = 0; i < Nsample_new; i++) {
         if(ExportSlabs[i]) {
             MPI_Isend(ExportSlabs[i], slab_size_new, MPI_DOUBLE,
-                    NewLayout[i], 99999, MPI_COMM_WORLD, &ExportRequest[i]);
+                    NewLayout[i], Nsample_new, MPI_COMM_WORLD, &ExportRequest[i]);
         } else {
             ExportRequest[i] = MPI_REQUEST_NULL;
         }
@@ -125,7 +147,7 @@ void degrade(int Level, int newlevel) {
 
                 double * tmp = fftw_malloc(sizeof(double) * slab_size_new);
                 MPI_Recv(tmp, slab_size_new, MPI_DOUBLE, 
-                        OldLayout[iold], 99999, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                        OldLayout[iold], Nsample_new, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 for(int j = 0; j < Nsample_new; j++) {
                     for(int k = 0; k < Nsample_new; k++) {
                         PRNew(i, j, k) += tmp[j * 2 * (Nsample_new / 2 + 1) + k];
@@ -135,8 +157,11 @@ void degrade(int Level, int newlevel) {
             }
         } 
     }
-    for(intptr_t i = Local_x_start_new * slab_size_new; i < Local_x_end_new * slab_size_new; i ++) {
-        DispNew[i] *= 1.0 / (factor * factor * factor);
+    MPI_Waitall(Nsample_new, ExportRequest, MPI_STATUSES_IGNORE);
+    for(int i = Local_x_start_new; i < Local_x_end_new; i ++)
+    for(int j = 0; j < Nsample_new; j++)
+    for(int k = 0; k < Nsample_new; k++) {
+            PRNew(i, j, k) *= 1.0 / (factor * factor * factor);
     }
     fftw_free(Disp);
     Disp = DispNew;

@@ -11,12 +11,13 @@
 #include <math.h>
 #include <fftw3-mpi.h>
 extern void init_power(void);
-extern void init_disp(int Level);
-extern void free_disp(void);
 extern void init_filter(int Level);
+extern void init_disp(int Level);
+extern void init_seedtable(int Level);
+extern void free_disp();
 extern void disp(int ax);
 extern void filter(int ax, char* fname, int i);
-extern void degrade(int Level0, int Level1);
+extern void degrade(int ax, int Level0, int Level1);
 extern double F_Omega(double a);
 
 extern double GrowthFactor(double, double);
@@ -268,6 +269,8 @@ void run_filter(int Level, int ax, int i) {
     int dswidth = decwidth(DownSample);
     char * fname;
 
+    init_filter(Level); /* this will set R to the correct value*/
+
     ROOTONLY {
         fname = g_strdup_printf("%s/%s-%d.header", CB.datadir, blocks[ax + 2], Nmesh);
         write_header(Level, fname);
@@ -280,7 +283,6 @@ void run_filter(int Level, int ax, int i) {
         fname = g_strdup_printf("%s/%s%s-%d.%0*d-%0*d", CB.datadir, blocks[ax + 2], (ax>=0)?"1":"", Nmesh, dswidth, i, width, ThisTask);
     }
 
-    init_filter(Level);
     filter(ax, fname, i);
 
     g_free(fname);
@@ -365,20 +367,21 @@ int main(int argc, char * argv[]) {
         axend = 4;
     }
 
+    init_seedtable(Level);
+
     for(int ax = axstart; ax < axend; ax ++) {
         /* -2 is the region mask and -1 is the index map, they do not need the displacment field */
-        if(ax >= 0) {
-            init_disp(Level);
-            disp(ax);
-        }
+        init_disp(Level);
+        disp(ax);
         if (Nmesh == CB.IC.NmeshPrimary) {
             /* this is the primary mesh; 
              * degrade to get the coarse meshes, too */
             for(int i = Level; i >= 0; i--) {
-                g_message("running on level %d", L[i].Nmesh);
-                if(ax >=0)
-                    if(i != Level)
-                        degrade(i + 1, i);
+                MPI_Barrier(MPI_COMM_WORLD);
+                ROOTONLY
+                    g_message("running on level %d", L[i].Nmesh);
+                if(i != Level)
+                    degrade(ax, i + 1, i);
                 /* these coarse levels never have DownSample,
                  * 0 or anything will work */
                 run_filter(i, ax, 0);
@@ -388,9 +391,7 @@ int main(int argc, char * argv[]) {
                 run_filter(Level, ax, i);
             }
         }
-        if(ax > 0) {
-            free_disp();
-        }
+        free_disp();
         MPI_Barrier(MPI_COMM_WORLD);
     }
     fftw_mpi_cleanup();
