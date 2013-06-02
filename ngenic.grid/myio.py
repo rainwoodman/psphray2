@@ -24,8 +24,7 @@ def readchunk(H, fname, bottom=None, top=None, extra=''):
   dispy = numpy.memmap(fname % ('dispy' + extra), mode='r', dtype='f4')
   dispz = numpy.memmap(fname % ('dispz' + extra), mode='r', dtype='f4')
   delta = numpy.memmap(fname % ('delta' + extra), mode='r', dtype='f4')
-  print 'read chunk', fname, extra
-  if H['Scale'] == 0.0:
+  if False and H['Scale'] == 0.0:
     assert H['DownSample'] == 1
     xstart = fid * int(numpy.ceil(1.0 * H['Nmesh'] / H['NTask']))
     xend = (fid + 1) * int(numpy.ceil(1.0 * H['Nmesh'] / H['NTask']))
@@ -44,6 +43,7 @@ def readchunk(H, fname, bottom=None, top=None, extra=''):
   else:
     includemask = numpy.ones(len(ipos), dtype='?')
   result = numpy.empty(includemask.sum(), dtype=[('ipos', ('i4', 3)), ('disp', ('f4', 3)), ('delta', 'f4')])
+  if len(result) == 0: return result
   result['ipos'] = ipos[includemask]
   result['disp'][:, 0] = dispx[includemask]
   result['disp'][:, 1] = dispy[includemask]
@@ -52,7 +52,6 @@ def readchunk(H, fname, bottom=None, top=None, extra=''):
   return result
 
 def writechunk(H, fname, chunk):
-  print 'write chunk', fname
   assert H['DownSample'] > 1
   # we shall never write anything to a non downsampling level
   chunk['disp'][:, 0].tofile(fname % 'dispx')
@@ -106,6 +105,7 @@ def write_gadget_one(fname, h, chunk):
     dmmass = mass_c * A.OmegaM
 
   Spacing = h['A'].BoxSize / h['Nmesh']
+  PrimarySpacing = h['A'].BoxSize / h['NmeshPrimary']
 
   with file(fname, 'w') as icfile:
     header = numpy.zeros(None, GHEADER)
@@ -126,7 +126,8 @@ def write_gadget_one(fname, h, chunk):
     writerecord(icfile, header)
 
     # position
-    pos = (chunk['ipos'] + 0.5) * Spacing
+    print 0.5 * PrimarySpacing
+    pos = (chunk['ipos'] + 0.5) * Spacing - 0.5 * PrimarySpacing
     if not A.nodisp:
       pos += chunk['disp']
 
@@ -161,9 +162,7 @@ def write_gadget_one(fname, h, chunk):
     id += (h['ilevel'] << 55)
     if h['makegas']:
       id = numpy.tile(id, 2)
-      print hex(id[0]), hex(id[N])
       id[:N] += (1L << 54)
-      print hex(id[0]), hex(id[N])
     writerecord(icfile, id)
     id = None
 

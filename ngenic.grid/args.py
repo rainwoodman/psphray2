@@ -47,6 +47,8 @@ def parseargs():
   args.datadir = config.get("IO", "datadir")
   args.BoxSize = config.getfloat("IC", "BoxSize")
   args.a = config.getfloat("IC", "a")
+  args.NmeshPrimary = config.getfloat("IC", "NmeshPrimary")
+  print args.NmeshPrimary
   args.OmegaM = config.getfloat("Cosmology", "OmegaM")
   args.OmegaB = config.getfloat("Cosmology", "OmegaB")
   args.OmegaL = config.getfloat("Cosmology", "OmegaL")
@@ -115,6 +117,7 @@ def build_meta_block(A, ilevel):
   meta['Offset'] = numpy.array(meta['Offset'][0], dtype='intp')
   meta['Size'] = numpy.array(meta['Size'][0], dtype='intp')
   meta['Nmesh'] = l['Nmesh']
+  meta['NmeshPrimary'] = A.NmeshPrimary
   meta['Scale'] = l['scale']
   meta['datadir'] = A.datadir
   meta['ZoomCenter'] = A.R['center'][0]
