@@ -73,6 +73,7 @@ static void read_power_table() {
 
     GList * table = NULL;
 
+    g_message("using power from file %s", CB.IC.PowerSpectrumFile);
     if(!(fd = fopen(CB.IC.PowerSpectrumFile, "r"))) {
         g_error("can't read input spectrum in file '%s'\n", 
                 CB.IC.PowerSpectrumFile);
@@ -80,15 +81,16 @@ static void read_power_table() {
 
     while (fscanf(fd, " %lg %lg ", &k, &p) == 2) {
         struct pow_table * entry = g_new0(pow_table, 1);
+        entry->logk = log10(k);
+        entry->logD = log10(p);
         table = g_list_insert_sorted(table, (gpointer)entry, compare_logk);
-        entry->logk = k;
-        entry->logD = p;
     }
     fclose(fd);
     pow_table_alloc(g_list_length(table));
     int i;
     for(ptr = table, i = 0; ptr; ptr = ptr->next, i++) {
         memcpy(&PowerTable[i], ptr->data, sizeof(pow_table));
+        printf("%g %g\n", PowerTable[i].logk, PowerTable[i].logD);
     }
     g_list_free_full(table, g_free);
     NPowerTable = i;
@@ -103,20 +105,20 @@ static void SECTION_COSMOLOGY(GKeyFile * keyfile) {
     ddouble(keyfile, "Cosmology", "OmegaB", &CB.C.OmegaB, 0.044);
     ddouble(keyfile, "Cosmology", "OmegaM", &CB.C.OmegaM, 0.26);
     ddouble(keyfile, "Cosmology", "OmegaL", &CB.C.OmegaL, 0.74);
+    _double(keyfile, "Cosmology", "Sigma8", &CB.C.Sigma8);
+    dinteger(keyfile, "Cosmology", "WhichSpectrum", &CB.IC.WhichSpectrum, 1); /*1 for EH, 3 for Etsu, 2 is from file*/
+    dstring(keyfile, "Cosmology", "PowerSpectrumFile", &CB.IC.PowerSpectrumFile, NULL); /*1 for EH, 3 for Etsu, 2 is from file*/
+    ddouble(keyfile, "Cosmology", "PrimordialIndex", &CB.IC.PrimordialIndex, 0.96);
+    ddouble(keyfile, "Cosmology", "ShapeGamma", &CB.IC.ShapeGamma, 0.201); /* only for Efstathiou specturm */
 }
 static void SECTION_IC(GKeyFile * keyfile) {
     _integer(keyfile, "IC", "Seed", &CB.IC.Seed);
     /* the primary mesh is where the fft is done.
      * coarse meshes are obtained by rebinning.*/
     _integer(keyfile, "IC", "NmeshPrimary", &CB.IC.NmeshPrimary);
-    dinteger(keyfile, "IC", "WhichSpectrum", &CB.IC.WhichSpectrum, 1); /*1 for EH, 3 for Etsu, 2 is from file and broken*/
-    dstring(keyfile, "IC", "PowerSpectrumFile", &CB.IC.PowerSpectrumFile, NULL); /*1 for EH, 3 for Etsu, 2 is from file and broken*/
     dinteger(keyfile, "IC", "SphereMode", &CB.IC.SphereMode, 1); 
     _double(keyfile, "IC", "BoxSize", &CB.BoxSize);
     _double(keyfile, "IC", "a", &CB.a);
-    _double(keyfile, "IC", "Sigma8", &CB.C.Sigma8);
-    ddouble(keyfile, "IC", "PrimordialIndex", &CB.IC.PrimordialIndex, 0.96);
-    ddouble(keyfile, "IC", "ShapeGamma", &CB.IC.ShapeGamma, 0.201); /* only for Efstathiou specturm */
 }
 static void SECTION_UNIT(GKeyFile * keyfile) {
     double UnitLength_in_cm, UnitMass_in_g, UnitVelocity_in_cm_per_s;

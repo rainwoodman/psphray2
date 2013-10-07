@@ -126,8 +126,10 @@ def write_gadget_one(fname, h, chunk):
     writerecord(icfile, header)
 
     # position
-    print 0.5 * PrimarySpacing
     pos = (chunk['ipos'] + 0.5) * Spacing - 0.5 * PrimarySpacing
+    # the extra shift is to match up the original NGenIC.v2 position
+    # of the Primary mesh positions.
+
     if not A.nodisp:
       pos += chunk['disp']
 

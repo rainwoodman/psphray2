@@ -28,19 +28,21 @@ double PowerSpec(double k)
     {
     case 1:
       power = PowerSpec_EH(k);
+      power *= pow(k, CB.IC.PrimordialIndex - 1.0);
       break;
 
     case 2:
+      /* Tabulated k is already tilted*/
       power = PowerSpec_Tabulated(k);
       break;
 
     default:
       power = PowerSpec_Efstathiou(k);
+      power *= pow(k, CB.IC.PrimordialIndex - 1.0);
       break;
     }
 
 
-  power *= pow(k, CB.IC.PrimordialIndex - 1.0);
 
   return power;
 }
@@ -62,7 +64,7 @@ void init_power(void)
 
   Norm = 1.0;
   Norm = CB.C.Sigma8 * CB.C.Sigma8 / TopHatSigma2(R8);
-  
+  g_message("Norm = %g", Norm); 
 }
 
 
@@ -207,7 +209,7 @@ static double qromb(double (*func)(double x), double a, double b) {
     F.params = (void*) func;
     double result;
     double error;
-    gsl_integration_qag(&F, a, b, 0, 1e-7, 1000, GSL_INTEG_GAUSS61, workspace, &result, &error);
+    gsl_integration_qag(&F, a, b, 1e-5, 1e-6, 1000, GSL_INTEG_GAUSS61, workspace, &result, &error);
     gsl_integration_workspace_free(workspace);
     return result;
 }

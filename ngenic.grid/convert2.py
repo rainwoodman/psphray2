@@ -1,5 +1,5 @@
 import numpy
-from scipy.ndimage import map_coordinates
+from scipy.ndimage import map_coordinates, spline_filter
 # this requires numpy > 1.6.0
 from args import parseargs
 from myio import readchunk, writechunk, yieldfilename, write_gadget_one, rewrite_header, writerecord
@@ -16,8 +16,9 @@ def joinchunks(h, exbot=None, extop=None):
   overlay = overlay[index.argsort()]
   return overlay
 
-def interpolate(h, hnext):
-  """ interpolate h into hnext """
+def interpolate(h, hnext, filter):
+  """ interpolate h into hnext, this needs a lot of memory(full mesh of the
+  lower level) """
   # round down
   exbot = (hnext['Offset'] * h['Nmesh']) // hnext['Nmesh']
   # round up
@@ -27,20 +28,45 @@ def interpolate(h, hnext):
 
   overlay = joinchunks(h, exbot, extop)
   src = overlay.reshape(*(extop-exbot))
+  if filter >= 2:
+    src['delta'] = spline_filter(src['delta'], order=filter)
+    for d in range(3):
+      src['disp'][:, d] = spline_filter(src['disp'][:, d], order=filter)
 
   for fn in list(yieldfilename(hnext, lookfor='delta1')):
     # read in the current level displacement
     chunk = readchunk(hnext, fn, None, None, extra='1')
     ipos = chunk['ipos']
     ipos = 1.0 * ipos * h['Nmesh'] / hnext['Nmesh'] - exbot
-    chunk['delta'] += map_coordinates(src['delta'], ipos.T)
+    chunk['delta'] += map_coordinates(src['delta'], ipos.T, order=filter,
+            prefilter=False)
     for d in range(3):
-      chunk['disp'][:, d] += map_coordinates(src['disp'][..., d], ipos.T)
+      chunk['disp'][:, d] += map_coordinates(src['disp'][..., d], ipos.T,
+              order=filter, prefilter=False)
     # write to the full displacement
     writechunk(hnext, fn, chunk)
 
+def powerspectrum(A):
+    assert A.WhichSpectrum == 2
+    import pycamb
+    a = dict(H0=A.h * 100., 
+          omegac=A.OmegaM- A.OmegaB, 
+          omegab=A.OmegaB, 
+          omegav=A.OmegaL, 
+          omegak=0.0, omegan=0,
+          scalar_index=A.PrimordialIndex
+          )
+    print a
+    fakesigma8 = pycamb.transfers(scalar_amp=1, **a)[2]
+    scalar_amp = fakesigma8 ** -2 * A.Sigma8 ** 2
+    k, p = pycamb.matter_power(scalar_amp=scalar_amp, maxk=500, **a)
+    p[numpy.isnan(p)] = 0
+    numpy.savetxt(A.PowerSpectrumFile, zip(k, p), fmt='%g')
+    
 def main():
   A = parseargs()
+  if A.action == 'powerspectrum':
+    powerspectrum(A)
   if A.action == 'interpolate':
     main_interpolate(A)
   if A.action == 'gadget':
@@ -54,16 +80,16 @@ def main_interpolate(A):
     h = A.META[Nmesh[i - 1]]
     hnext = A.META[Nmesh[i]]
     if hnext['DownSample'] > 1:
-      interpolate(h, hnext)
+      interpolate(h, hnext, A.filter)
 
 def main_gadget(A):
+  """ this doesn't use more memory than O(one chunk file) """
   Nmesh = A.L['Nmesh']
   fid = 0
   F = []
   for i in range(len(A.L)):
     h = A.META[Nmesh[i]]
     print 'working on', i, A.L[i]
-#    overlay = joinchunks(h).reshape(h['Size'])
     for fn in list(yieldfilename(h)):
       chunk = readchunk(h, fn, None, None)
       if i != 0:
@@ -91,16 +117,13 @@ def main_gadget(A):
         chunk = chunk[~excludemask]
         ipos = exclude['ipos']
 
-      # here we use the center cell value for these particles.
-      # the locations are shifted later in write_gadget_one.
+      # we do not interpolate the center cell value for these particles.
+      # because ngenic.grid already writes the center cell value
+      # for the degraded levels,
+      # and for the inside levels, we do not need to preserve
+      # the NmeshPrimary modes, and shifting by inconsistant
+      # meshsize/2 per cell is fine.
 
-      # XXX: this is disabled as it doesn't really change anything.
-
-#      chunk['delta'] = map_coordinates(overlay['delta'], 
-#              chunk['ipos'].T + 0.5 - h['Offset'][:, None], mode='wrap')
-#      for d in range(3):
-#          chunk['disp'][:, d] = map_coordinates(overlay['disp'][..., d], 
-#              chunk['ipos'].T + 0.5 - h['Offset'][:, None], mode='wrap')
 
       for start in range(0, len(chunk), A.Npar):
         F.append(write_gadget_one('%s.%d' % (A.prefix, fid), h, chunk[start:start+A.Npar]))

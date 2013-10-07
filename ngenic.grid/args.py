@@ -8,8 +8,9 @@ def parseargs():
   parser = argparse.ArgumentParser(description="Assembling IC files from dumps")
   parser.add_argument("paramfile", 
                help="the same paramfile fed to ngenic.grid.")
-  parser.add_argument("action", choices=['interpolate', 'gadget', 'ramses'], 
+  parser.add_argument("action", choices=['powerspectrum', 'interpolate', 'gadget', 'ramses'], 
                  help="Format of the output. \
+                       powerspectrum: write a pycamb powerspectrum file. \
                        interpolate: to fill the DownSample regions, \
                        gadget : to write a gadget IC, \
                        ramses : to write a ramses IC")
@@ -18,6 +19,10 @@ def parseargs():
                        For levels with Gas the total number \
                        in a file will be twice of this",
                       default=1024 * 1024 * 4, dest='Npar', type=int);
+
+  parser.add_argument("--filter",  
+                 help="order of the filter in interpolation",
+                 default=4, dest='filter', type=int)
   parser.add_argument("--iddtype",  choices=['uint32', 'uint64'],
                  help="bit width of the id field",
                  default=numpy.dtype(numpy.uint64), dest='iddtype', type=numpy.dtype)
@@ -38,12 +43,20 @@ def parseargs():
                         action='store_true', default=False)
   args = parser.parse_args()
   config1 = ConfigParser.ConfigParser()
-  str = file(args.paramfile).read().replace(';', ',').replace('#', ';')
-  config1.readfp(StringIO.StringIO(str))
+  ssss = file(args.paramfile).read().replace(';', ',').replace('#', ';')
+  config1.readfp(StringIO.StringIO(ssss))
   datadir = config1.get("IO", "datadir")
   config = ConfigParser.ConfigParser()
-  str = file(datadir + '/paramfile-used').read().replace(';', ',').replace('#', ';')
-  config.readfp(StringIO.StringIO(str))
+  ssss = file(datadir + '/paramfile-used').read().replace(';', ',').replace('#', ';')
+  # disable reading from -used
+#  config.readfp(StringIO.StringIO(ssss))
+  config.optionxform = str
+  # paramfile-used contains defaults, yet
+  # paramfile overrides paramfile-used,
+  # sometimes we can pick datadir from an old run and just modify
+  # the radius
+  ssss = file(args.paramfile).read().replace(';', ',').replace('#', ';')
+  config.readfp(StringIO.StringIO(ssss))
   args.datadir = config.get("IO", "datadir")
   args.BoxSize = config.getfloat("IC", "BoxSize")
   args.a = config.getfloat("IC", "a")
@@ -52,6 +65,8 @@ def parseargs():
   args.OmegaM = config.getfloat("Cosmology", "OmegaM")
   args.OmegaB = config.getfloat("Cosmology", "OmegaB")
   args.OmegaL = config.getfloat("Cosmology", "OmegaL")
+  args.Sigma8 = config.getfloat("Cosmology", "Sigma8")
+  args.PrimordialIndex = config.getfloat("Cosmology", "PrimordialIndex")
   args.h = config.getfloat("Cosmology", "h")
   args.UnitLength_in_cm = config.getfloat("Unit", "UnitLength_in_cm")
   args.UnitVelocity_in_cm_per_s = config.getfloat("Unit", "UnitVelocity_in_cm_per_s")
@@ -60,6 +75,9 @@ def parseargs():
   args.G = config.getfloat("Cosmology", "G")
   args.H = config.getfloat("Cosmology", "H")
 
+  args.WhichSpectrum = config.getint("Cosmology", "WhichSpectrum");
+  if args.WhichSpectrum == 2:
+      args.PowerSpectrumFile = config.get("Cosmology", "PowerSpectrumFile")
   Regions = []
   for name, value in config.items("Regions"):
     all = [float(t) for t in value.split(',')]
@@ -71,6 +89,7 @@ def parseargs():
   
     Regions.append(((x, y, z), (sx, sy, sz)))
   args.R = numpy.array(Regions, dtype=[('center', ('f8', 3)), ('size', ('f8', 3))])
+  print args.R
   assert len(args.R) == 1 
   Levels = []
   
